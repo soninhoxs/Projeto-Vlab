@@ -1,0 +1,362 @@
+openapi: 3.0.3
+info:
+  title: V-Lab - API de Solicitações de Atendimento
+  description: |
+    API REST para gerenciamento de solicitações de atendimento em unidades públicas de saúde.
+    
+    ## Regras de Negócio
+    
+    - Toda solicitação é criada com status `RECEBIDA`
+    - Protocolo é gerado automaticamente
+    - Prioridade `URGENTE` requer justificativa obrigatória
+    - Transições de status seguem o fluxo da state machine
+    
+    ## Fluxo de Status
+    
+    ```
+    RECEBIDA → EM_ANALISE → AGENDADA → CONCLUIDA
+         ↓           ↓           ↓
+    CANCELADA   CANCELADA   CANCELADA
+    ```
+  version: 1.0.0
+  contact:
+    name: V-Lab Cln UFPE
+
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Servidor de desenvolvimento
+
+tags:
+  - name: Solicitações
+    description: Operações de CRUD de solicitações de atendimento
+
+paths:
+  /solicitacoes:
+    get:
+      tags:
+        - Solicitações
+      summary: Listar solicitações
+      description: Retorna lista paginada de solicitações com suporte a filtros
+      operationId: listSolicitacoes
+      parameters:
+        - name: page
+          in: query
+          description: Número da página
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - name: status
+          in: query
+          description: Filtrar por status
+          schema:
+            type: string
+            enum: [RECEBIDA, EM_ANALISE, AGENDADA, CONCLUIDA, CANCELADA]
+        - name: categoria
+          in: query
+          description: Filtrar por categoria
+          schema:
+            type: string
+            enum: [CONSULTA, EXAME, VACINACAO, OUTRO]
+        - name: prioridade
+          in: query
+          description: Filtrar por prioridade
+          schema:
+            type: string
+            enum: [BAIXA, MEDIA, ALTA, URGENTE]
+        - name: busca
+          in: query
+          description: Buscar por nome do solicitante ou protocolo
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Lista paginada de solicitações
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedSolicitacoes'
+        '500':
+          description: Erro interno do servidor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      tags:
+        - Solicitações
+      summary: Criar solicitação
+      description: Cria uma nova solicitação de atendimento
+      operationId: createSolicitacao
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSolicitacaoRequest'
+      responses:
+        '201':
+          description: Solicitação criada com sucesso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Solicitação criada com sucesso
+                  data:
+                    $ref: '#/components/schemas/Solicitacao'
+        '422':
+          description: Erro de validação
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+
+  /solicitacoes/{id}:
+    get:
+      tags:
+        - Solicitações
+      summary: Obter detalhes da solicitação
+      description: Retorna os detalhes completos de uma solicitação
+      operationId: getSolicitacao
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID da solicitação
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Detalhes da solicitação
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Solicitacao'
+        '404':
+          description: Solicitação não encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /solicitacoes/{id}/status:
+    patch:
+      tags:
+        - Solicitações
+      summary: Atualizar status
+      description: |
+        Atualiza o status da solicitação respeitando as regras de transição:
+        
+        | Status Atual | Próximos Permitidos |
+        |--------------|---------------------|
+        | RECEBIDA | EM_ANALISE, CANCELADA |
+        | EM_ANALISE | AGENDADA, CANCELADA |
+        | AGENDADA | CONCLUIDA, CANCELADA |
+        | CONCLUIDA | (nenhum - estado final) |
+        | CANCELADA | (nenhum - estado final) |
+      operationId: updateSolicitacaoStatus
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID da solicitação
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStatusRequest'
+      responses:
+        '200':
+          description: Status atualizado com sucesso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Status atualizado com sucesso
+                  data:
+                    $ref: '#/components/schemas/Solicitacao'
+        '404':
+          description: Solicitação não encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Transição de status inválida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+
+components:
+  schemas:
+    Solicitacao:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        protocolo:
+          type: string
+          description: Código único gerado automaticamente
+          example: VTXXXSBCUX
+        nome_solicitante:
+          type: string
+          example: João da Silva
+        categoria:
+          type: string
+          enum: [CONSULTA, EXAME, VACINACAO, OUTRO]
+          example: CONSULTA
+        prioridade:
+          type: string
+          enum: [BAIXA, MEDIA, ALTA, URGENTE]
+          example: MEDIA
+        status:
+          type: string
+          enum: [RECEBIDA, EM_ANALISE, AGENDADA, CONCLUIDA, CANCELADA]
+          example: RECEBIDA
+        descricao:
+          type: string
+          nullable: true
+          example: Paciente com dores persistentes
+        justificativa_prioridade:
+          type: string
+          nullable: true
+          description: Obrigatório quando prioridade é URGENTE
+          example: Paciente idoso com sintomas graves
+        created_at:
+          type: string
+          format: date-time
+          example: '2026-09-17T14:30:00.000000Z'
+        updated_at:
+          type: string
+          format: date-time
+          example: '2026-09-17T15:45:00.000000Z'
+      required:
+        - id
+        - protocolo
+        - nome_solicitante
+        - categoria
+        - prioridade
+        - status
+        - created_at
+        - updated_at
+
+    CreateSolicitacaoRequest:
+      type: object
+      properties:
+        nome_solicitante:
+          type: string
+          maxLength: 255
+          example: Maria Santos
+        categoria:
+          type: string
+          enum: [CONSULTA, EXAME, VACINACAO, OUTRO]
+          example: EXAME
+        prioridade:
+          type: string
+          enum: [BAIXA, MEDIA, ALTA, URGENTE]
+          example: ALTA
+        descricao:
+          type: string
+          nullable: true
+          example: Solicitação de exame de sangue
+        justificativa_prioridade:
+          type: string
+          nullable: true
+          description: Obrigatório quando prioridade é URGENTE
+          example: null
+      required:
+        - nome_solicitante
+        - categoria
+        - prioridade
+
+    UpdateStatusRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [RECEBIDA, EM_ANALISE, AGENDADA, CONCLUIDA, CANCELADA]
+          example: EM_ANALISE
+      required:
+        - status
+
+    PaginatedSolicitacoes:
+      type: object
+      properties:
+        current_page:
+          type: integer
+          example: 1
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Solicitacao'
+        first_page_url:
+          type: string
+          example: http://localhost:8000/api/v1/solicitacoes?page=1
+        from:
+          type: integer
+          nullable: true
+          example: 1
+        last_page:
+          type: integer
+          example: 5
+        last_page_url:
+          type: string
+          example: http://localhost:8000/api/v1/solicitacoes?page=5
+        next_page_url:
+          type: string
+          nullable: true
+          example: http://localhost:8000/api/v1/solicitacoes?page=2
+        path:
+          type: string
+          example: http://localhost:8000/api/v1/solicitacoes
+        per_page:
+          type: integer
+          example: 7
+        prev_page_url:
+          type: string
+          nullable: true
+          example: null
+        to:
+          type: integer
+          nullable: true
+          example: 7
+        total:
+          type: integer
+          example: 30
+
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Recurso não encontrado
+
+    ValidationError:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Os dados fornecidos são inválidos.
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          example:
+            nome_solicitante:
+              - O campo nome solicitante é obrigatório.
+            justificativa_prioridade:
+              - A justificativa de prioridade é obrigatória quando a prioridade é URGENTE.

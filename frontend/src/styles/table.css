@@ -1,0 +1,340 @@
+/* ===================================================
+ * V-Lab Cln UFPE — Tabela de Solicitações
+ * Tabela acessível com paginação responsiva
+ * =================================================== */
+
+/* ─── Container da Tabela ─── */
+.table-container {
+  background-color: var(--color-neutral-0);
+  border: 1px solid var(--color-neutral-200);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-xs);
+  position: relative;
+}
+
+.table-container--refreshing .table-wrapper {
+  opacity: 0.72;
+  transition: opacity var(--transition-fast);
+}
+
+.table-container__refresh-indicator {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-4);
+  z-index: 1;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  background-color: var(--color-neutral-0);
+  border: 1px solid var(--color-neutral-200);
+  box-shadow: var(--shadow-sm);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-neutral-600);
+}
+
+.table-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ─── Tabela ─── */
+.table {
+  width: 100%;
+  min-width: 900px;
+}
+
+.table caption {
+  padding: var(--space-4);
+  text-align: left;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-neutral-700);
+  caption-side: top;
+}
+
+/* ─── Cabeçalho ─── */
+.table thead {
+  background-color: var(--color-neutral-50);
+  border-bottom: 2px solid var(--color-neutral-200);
+}
+
+.table th {
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-neutral-500);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  background-color: var(--color-neutral-50);
+}
+
+/* ─── Corpo ─── */
+.table tbody tr {
+  border-bottom: 1px solid var(--color-neutral-100);
+  transition: background-color var(--transition-fast);
+}
+
+.table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.table tbody tr:hover {
+  background-color: var(--color-neutral-50);
+}
+
+.table tbody tr:nth-child(even) {
+  background-color: var(--color-neutral-50);
+}
+
+.table tbody tr:nth-child(even):hover {
+  background-color: var(--color-neutral-100);
+}
+
+.table td {
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--font-size-base);
+  color: var(--color-neutral-700);
+  vertical-align: middle;
+}
+
+/* ─── Colunas Específicas ─── */
+.table__protocol {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-primary-600);
+  white-space: nowrap;
+}
+
+.table__solicitante {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.table__solicitante-name {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-neutral-800);
+}
+
+.table__solicitante-card {
+  font-size: var(--font-size-xs);
+  color: var(--color-neutral-400);
+}
+
+.table__date {
+  white-space: nowrap;
+  font-size: var(--font-size-sm);
+  color: var(--color-neutral-500);
+}
+
+/* ─── Ação da Tabela ─── */
+.table__action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  background-color: var(--color-primary-50);
+  color: var(--color-primary-600);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+  white-space: nowrap;
+  cursor: pointer;
+  border: none;
+}
+
+.table__action-btn:hover {
+  background-color: var(--color-primary-100);
+  color: var(--color-primary-700);
+}
+
+.table__action-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ─── Row destacada (urgente) ─── */
+.table tbody tr--urgente {
+  border-left: 3px solid var(--color-urgente);
+}
+
+/* ─── Paginação ─── */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4);
+  border-top: 1px solid var(--color-neutral-200);
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.pagination__info {
+  font-size: var(--font-size-sm);
+  color: var(--color-neutral-500);
+}
+
+.pagination__info-highlight {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-neutral-700);
+}
+
+.pagination__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.pagination__list {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pagination__page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-neutral-600);
+  background-color: transparent;
+  border: 1px solid var(--color-neutral-200);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.pagination__page:hover:not(.pagination__page--active) {
+  background-color: var(--color-neutral-100);
+  border-color: var(--color-neutral-300);
+}
+
+.pagination__page--active {
+  background-color: var(--color-primary-500);
+  color: var(--color-neutral-0);
+  border-color: var(--color-primary-500);
+}
+
+.pagination__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-neutral-600);
+  background-color: transparent;
+  border: 1px solid var(--color-neutral-200);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.pagination__btn:hover:not(:disabled):not(.pagination__btn--active) {
+  background-color: var(--color-neutral-100);
+  border-color: var(--color-neutral-300);
+}
+
+.pagination__btn--active {
+  background-color: var(--color-primary-500);
+  color: var(--color-neutral-0);
+  border-color: var(--color-primary-500);
+}
+
+.pagination__btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pagination__btn--nav {
+  gap: var(--space-1);
+  padding: 0 var(--space-3);
+}
+
+.pagination__btn--nav svg {
+  width: 14px;
+  height: 14px;
+}
+
+.pagination__ellipsis {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  font-size: var(--font-size-sm);
+  color: var(--color-neutral-400);
+  user-select: none;
+}
+
+/* ─── Tabela Responsiva: Card Layout em Mobile ─── */
+@media (max-width: 768px) {
+  .table-wrapper {
+    overflow-x: visible;
+  }
+
+  .table {
+    min-width: 0;
+  }
+
+  .table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+
+  .table tbody tr {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-4);
+    border-bottom: 1px solid var(--color-neutral-200);
+  }
+
+  .table tbody tr:nth-child(even) {
+    background-color: transparent;
+  }
+
+  .table td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-1) 0;
+    border: none;
+  }
+
+  .table td::before {
+    content: attr(data-label);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-neutral-500);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    flex-shrink: 0;
+    margin-right: var(--space-4);
+  }
+
+  .pagination {
+    flex-direction: column;
+    align-items: center;
+  }
+}

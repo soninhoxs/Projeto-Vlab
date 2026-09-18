@@ -1,0 +1,159 @@
+/* ===================================================
+ * V-Lab Cln UFPE — CSS Reset
+ * Reset moderno para consistência cross-browser
+ * =================================================== */
+
+/* Box sizing universal */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* Remove margens e paddings padrão */
+* {
+  margin: 0;
+  padding: 0;
+}
+
+/* Previne font-size inflation em mobile */
+html {
+  -moz-text-size-adjust: none;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+  scroll-behavior: smooth;
+}
+
+/* Base do corpo */
+body {
+  min-height: 100vh;
+  font-family: var(--font-family-primary);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-normal);
+  color: var(--color-neutral-800);
+  background-color: var(--color-neutral-50);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Remove estilos de lista */
+ul,
+ol {
+  list-style: none;
+}
+
+/* Balanceamento de texto para headings */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  text-wrap: balance;
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-tight);
+}
+
+/* Parágrafos legíveis */
+p {
+  text-wrap: pretty;
+}
+
+/* Links sem decoração por padrão */
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Imagens responsivas */
+img,
+picture,
+video,
+canvas,
+svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+/* Fonte herdada em inputs */
+input,
+button,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+/* Botões sem estilo padrão */
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+}
+
+/* Textarea sem resize por padrão */
+textarea {
+  resize: vertical;
+}
+
+/* Tabelas sem collapse */
+table {
+  border-collapse: collapse;
+  border-spacing: 0;
+  width: 100%;
+}
+
+/* Foco visível para acessibilidade */
+:focus-visible {
+  outline: 2px solid var(--color-primary-500);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Remove outline em focus não-teclado */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Screen reader only */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Skip to content link */
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: var(--space-4);
+  z-index: var(--z-tooltip);
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-primary-500);
+  color: var(--color-neutral-0);
+  border-radius: var(--radius-md);
+  font-weight: var(--font-weight-medium);
+  transition: top var(--transition-fast);
+}
+
+.skip-link:focus {
+  top: var(--space-2);
+}
+
+/* Desabilita TODAS as transições (usado durante troca de tema), exceto o próprio botão */
+.no-transitions,
+.no-transitions *:not(.theme-toggle):not(.theme-toggle *),
+.no-transitions *:not(.theme-toggle):not(.theme-toggle *)::before,
+.no-transitions *:not(.theme-toggle):not(.theme-toggle *)::after {
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+}

@@ -1,0 +1,268 @@
+/* ===================================================
+ * V-Lab Cln UFPE — Design Tokens
+ * Sistema de variáveis CSS para consistência visual
+ * =================================================== */
+
+:root {
+  /* ─── Cores Primárias (Verde/Teal) ─── */
+  --color-primary-50: #e8f5e9;
+  --color-primary-100: #c8e6c9;
+  --color-primary-200: #a5d6a7;
+  --color-primary-300: #81c784;
+  --color-primary-400: #66bb6a;
+  --color-primary-500: #2e7d32;
+  --color-primary-600: #256b29;
+  --color-primary-700: #1b5e20;
+  --color-primary-800: #145218;
+  --color-primary-900: #0d3b11;
+
+  /* ─── Cores Neutras ─── */
+  --color-neutral-0: #ffffff;
+  --color-neutral-50: #f8faf8;
+  --color-neutral-100: #f1f4f1;
+  --color-neutral-200: #e4e8e4;
+  --color-neutral-300: #cdd3cd;
+  --color-neutral-400: #9ca39c;
+  --color-neutral-500: #6b756b;
+  --color-neutral-600: #4a524a;
+  --color-neutral-700: #343a34;
+  --color-neutral-800: #1e241e;
+  --color-neutral-900: #0f130f;
+
+  /* ─── Cores Semânticas ─── */
+  --color-urgente: #c62828;
+  --color-urgente-bg: #ffebee;
+  --color-urgente-border: #ef9a9a;
+
+  --color-alta: #e65100;
+  --color-alta-bg: #fff3e0;
+  --color-alta-border: #ffcc80;
+
+  --color-media: #1565c0;
+  --color-media-bg: #e3f2fd;
+  --color-media-border: #90caf9;
+
+  --color-baixa: #2e7d32;
+  --color-baixa-bg: #e8f5e9;
+  --color-baixa-border: #a5d6a7;
+
+  /* ─── Cores de Status ─── */
+  --color-recebida: #c62828;
+  --color-recebida-bg: #ffebee;
+
+  --color-analise: #e65100;
+  --color-analise-bg: #fff3e0;
+
+  --color-agendada: #1565c0;
+  --color-agendada-bg: #e3f2fd;
+
+  --color-concluida: #2e7d32;
+  --color-concluida-bg: #e8f5e9;
+
+  --color-cancelada: #c62828;
+  --color-cancelada-bg: #ffebee;
+
+  /* ─── Cores de Categoria ─── */
+  --color-consulta: #2e7d32;
+  --color-consulta-bg: #e8f5e9;
+
+  --color-exame: #1565c0;
+  --color-exame-bg: #e3f2fd;
+
+  --color-vacinacao: #e65100;
+  --color-vacinacao-bg: #fff3e0;
+
+  --color-outro: #6b756b;
+  --color-outro-bg: #f1f4f1;
+
+  /* ─── Cores de KPI Cards ─── */
+  --color-kpi-total-border: #2e7d32;
+  --color-kpi-total-bg: #f1f8f1;
+
+  --color-kpi-recebidas-border: #2e7d32;
+  --color-kpi-recebidas-bg: #e8f5e9;
+
+  --color-kpi-analise-border: #1565c0;
+  --color-kpi-analise-bg: #e3f2fd;
+
+  --color-kpi-agendadas-border: #2e7d32;
+  --color-kpi-agendadas-bg: #e8f5e9;
+
+  --color-kpi-urgentes-border: #c62828;
+  --color-kpi-urgentes-bg: #ffebee;
+
+  /* ─── Tipografia ─── */
+  --font-family-primary: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-size-xs: 0.6875rem;    /* 11px */
+  --font-size-sm: 0.75rem;      /* 12px */
+  --font-size-base: 0.875rem;   /* 14px */
+  --font-size-md: 1rem;         /* 16px */
+  --font-size-lg: 1.125rem;     /* 18px */
+  --font-size-xl: 1.5rem;       /* 24px */
+  --font-size-2xl: 1.75rem;     /* 28px */
+  --font-size-3xl: 2.25rem;     /* 36px */
+
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  --line-height-tight: 1.2;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.75;
+
+  /* ─── Espaçamentos ─── */
+  --space-1: 0.25rem;   /* 4px */
+  --space-2: 0.5rem;    /* 8px */
+  --space-3: 0.75rem;   /* 12px */
+  --space-4: 1rem;      /* 16px */
+  --space-5: 1.25rem;   /* 20px */
+  --space-6: 1.5rem;    /* 24px */
+  --space-8: 2rem;      /* 32px */
+  --space-10: 2.5rem;   /* 40px */
+  --space-12: 3rem;     /* 48px */
+  --space-16: 4rem;     /* 64px */
+
+  /* ─── Bordas ─── */
+  --radius-sm: 0.25rem;   /* 4px */
+  --radius-md: 0.5rem;    /* 8px */
+  --radius-lg: 0.75rem;   /* 12px */
+  --radius-xl: 1rem;      /* 16px */
+  --radius-full: 9999px;
+
+  /* ─── Sombras ─── */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.06), 0 4px 6px rgba(0, 0, 0, 0.04);
+  --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.08), 0 10px 10px rgba(0, 0, 0, 0.04);
+
+  /* ─── Transições ─── */
+  --transition-fast: 150ms ease;
+  --transition-base: 250ms ease;
+  --transition-slow: 350ms ease;
+
+  /* ─── Z-Index ─── */
+  --z-sidebar: 100;
+  --z-header: 200;
+  --z-overlay: 300;
+  --z-modal: 400;
+  --z-tooltip: 500;
+
+  /* ─── Layout ─── */
+  --sidebar-width: 240px;
+  --sidebar-collapsed-width: 0px;
+  --header-height: 64px;
+
+  color-scheme: light;
+}
+
+/* ===================================================
+ * Modo Escuro — Overrides
+ * =================================================== */
+[data-dark-mode="true"] {
+  color-scheme: dark;
+
+  /* ─── Cores Primárias (verde mais vibrante no escuro) ─── */
+  --color-primary-50: #0d2a10;
+  --color-primary-100: #14391a;
+  --color-primary-200: #1b5e20;
+  --color-primary-300: #2e7d32;
+  --color-primary-400: #43a047;
+  --color-primary-500: #66bb6a;
+  --color-primary-600: #81c784;
+  --color-primary-700: #a5d6a7;
+  --color-primary-800: #c8e6c9;
+  --color-primary-900: #e8f5e9;
+
+  /* ─── Cores Neutras (invertidas) ─── */
+  --color-neutral-0: #111611;
+  --color-neutral-50: #161a16;
+  --color-neutral-100: #1e241e;
+  --color-neutral-200: #2a302a;
+  --color-neutral-300: #3a423a;
+  --color-neutral-400: #6b756b;
+  --color-neutral-500: #9ca39c;
+  --color-neutral-600: #c0c8c0;
+  --color-neutral-700: #d8ddd8;
+  --color-neutral-800: #e8ede8;
+  --color-neutral-900: #f4f7f4;
+
+  /* ─── Cores Semânticas (dark-friendly) ─── */
+  --color-urgente: #ef5350;
+  --color-urgente-bg: #2a1215;
+  --color-urgente-border: #5c2020;
+
+  --color-alta: #ff9800;
+  --color-alta-bg: #2a1d0a;
+  --color-alta-border: #5c3f1a;
+
+  --color-media: #42a5f5;
+  --color-media-bg: #0d1f2e;
+  --color-media-border: #1a3d5c;
+
+  --color-baixa: #66bb6a;
+  --color-baixa-bg: #0d2a10;
+  --color-baixa-border: #1b5e20;
+
+  /* ─── Cores de Status (dark-friendly) ─── */
+  --color-recebida: #ef5350;
+  --color-recebida-bg: #2a1215;
+
+  --color-analise: #ff9800;
+  --color-analise-bg: #2a1d0a;
+
+  --color-agendada: #42a5f5;
+  --color-agendada-bg: #0d1f2e;
+
+  --color-concluida: #66bb6a;
+  --color-concluida-bg: #0d2a10;
+
+  --color-cancelada: #ef5350;
+  --color-cancelada-bg: #2a1215;
+
+  /* ─── Cores de Categoria (dark-friendly) ─── */
+  --color-consulta: #66bb6a;
+  --color-consulta-bg: #0d2a10;
+
+  --color-exame: #42a5f5;
+  --color-exame-bg: #0d1f2e;
+
+  --color-vacinacao: #ff9800;
+  --color-vacinacao-bg: #2a1d0a;
+
+  --color-outro: #9ca39c;
+  --color-outro-bg: #1e241e;
+
+  /* ─── KPI Cards (dark-friendly) ─── */
+  --color-kpi-total-border: #66bb6a;
+  --color-kpi-total-bg: #111f12;
+
+  --color-kpi-recebidas-border: #66bb6a;
+  --color-kpi-recebidas-bg: #0d2a10;
+
+  --color-kpi-analise-border: #42a5f5;
+  --color-kpi-analise-bg: #0d1f2e;
+
+  --color-kpi-agendadas-border: #66bb6a;
+  --color-kpi-agendadas-bg: #0d2a10;
+
+  --color-kpi-urgentes-border: #ef5350;
+  --color-kpi-urgentes-bg: #2a1215;
+
+  /* ─── Sombras (mais sutis no escuro) ─── */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.3), 0 2px 4px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.3), 0 4px 6px rgba(0, 0, 0, 0.2);
+  --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.4), 0 10px 10px rgba(0, 0, 0, 0.2);
+}
+
+/* ─── Reduced Motion ─── */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --transition-fast: 0ms;
+    --transition-base: 0ms;
+    --transition-slow: 0ms;
+  }
+}
