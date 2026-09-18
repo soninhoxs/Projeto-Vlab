@@ -1,308 +1,248 @@
-# V-Lab - Sistema de Gestão de Solicitações de Atendimento
+# V-Lab
 
-Sistema full stack para registrar e acompanhar solicitações de atendimento encaminhadas a unidades públicas de saúde.
+**Sistema de gestão de solicitações de atendimento para unidades públicas de saúde.**
 
-## Telas
+React · TypeScript · Laravel · PostgreSQL · Docker
 
-Fila de solicitações (tema claro), criação e detalhe (tema escuro):
+Repositório: [soninhoxs/Projeto-Vlab](https://github.com/soninhoxs/Projeto-Vlab)
 
 ![Fila de solicitações](docs/screenshots/fila-solicitacoes.png)
 
+_Fila operacional — KPIs, filtros e listagem paginada._
+
+---
+
+## Sobre o projeto
+
+O **V-Lab** registra e acompanha solicitações encaminhadas a uma unidade: protocolo único, categoria, prioridade, status e trilha de datas. O recorte é o de uma **fila de regulação** — o operador vê o que chegou, filtra, abre o detalhe e avança o status segundo regras de negócio, não atalhos na interface.
+
+Foi desenhado para o processo seletivo **V-Lab Cln UFPE**: stack simples, contrato REST explícito e decisões que aguentam volume sem copiar arquitetura de ERP (mensageria, microserviços).
+
+### Problema
+
+Filas de atendimento misturam busca, período, prioridade e ciclo de vida do pedido. Se o status for um campo livre, a operação quebra. Se cada filtro for um `WHERE` solto no controller, a API vira um amontoado frágil. Se a lista só atualiza depois de um refetch lento, o operador acha que o cadastro falhou.
+
+### Solução
+
+- **Domínio no servidor** — enums, state machine e Form Requests; o cliente não inventa transição.
+- **Consulta em um serviço** — filtros (status, categoria, prioridade, busca, período) isolados do controller.
+- **SPA com cache honesto** — React Query; o `201` confirmado entra na lista, sem linha fake.
+- **Um Compose** — Postgres + API + Vite; OPcache e workers no PHP para TTFB previsível.
+
+---
+
+## Arquitetura
+
+```mermaid
+flowchart TB
+    subgraph Cliente
+        SPA[React 19 SPA]
+        RQ[TanStack Query]
+        SPA --> RQ
+    end
+
+    subgraph API["API Laravel 13 · /api/v1"]
+        Ctrl[SolicitacaoController]
+        FR[Form Requests]
+        SM[StatusTransitionService]
+        QS[SolicitacaoQueryService]
+        Ctrl --> FR
+        Ctrl --> SM
+        Ctrl --> QS
+    end
+
+    subgraph Dados
+        PG[(PostgreSQL 15)]
+    end
+
+    RQ -->|GET / POST / PATCH| Ctrl
+    QS --> PG
+    SM --> PG
+```
+
+Fluxo: o browser fala só com `/api/v1`. Listagem e filtros passam pelo `SolicitacaoQueryService`. Criação valida no `StoreSolicitacaoRequest` e gera protocolo no model. Mudança de status passa pelo `StatusTransitionService` — estados finais (`CONCLUIDA`, `CANCELADA`) não voltam.
+
+Não há fila, Redis nem barramento. Para este recorte, I/O síncrono + índices no Postgres é o caminho certo.
+
+### Contrato da API
+
+| Método | Endpoint | Papel |
+|--------|----------|--------|
+| `GET` | `/api/v1/solicitacoes` | Lista paginada + filtros |
+| `POST` | `/api/v1/solicitacoes` | Cria (protocolo no servidor) |
+| `GET` | `/api/v1/solicitacoes/{id}` | Detalhe |
+| `PATCH` | `/api/v1/solicitacoes/{id}/status` | Transição validada |
+
+Filtros de listagem: `status`, `categoria`, `prioridade`, `busca`, `data_inicio`, `data_fim` (`Y-m-d`). Período aplica intervalo em `created_at` (`>= 00:00:00` / `<= 23:59:59`), não `whereDate` por linha.
+
+OpenAPI: [`backend/docs/openapi.yaml`](backend/docs/openapi.yaml)
+
+---
+
+## Decisões de engenharia
+
+**State machine fora do controller.** Transições ficam em `StatusTransitionService`:
+
+- `RECEBIDA` → `EM_ANALISE` \| `CANCELADA`
+- `EM_ANALISE` → `AGENDADA` \| `CANCELADA`
+- `AGENDADA` → `CONCLUIDA` \| `CANCELADA`
+- `CONCLUIDA` / `CANCELADA` → finais
+
+O PATCH só aplica o que o serviço autoriza. Isso evita status “inventado” no JSON e concentra a regra num ponto testável.
+
+**Enums PHP + Form Requests.** `Categoria`, `Prioridade` e `Status` são enums. Validação de create, listagem e patch não mora no controller. URGENTE exige justificativa. Mass assignment não inclui `status` nem `protocolo`.
+
+**Query object para a fila.** `SolicitacaoQueryService` monta o SELECT: LIKE com escape de `%`/`_`, enums, período. O controller não acumula `if`.
+
+**Cache da lista = dado do servidor.** Depois do POST `201`, o frontend grava o payload confirmado no React Query (página 1) e invalida a query. Não há insert otimista com id local — o protocolo que aparece é o mesmo do banco.
+
+**Calendário próprio.** `<input type="date">` nativo estourava o layout, pintava seleção azul e mandava `99/99/9999` para a API (422 disfarçado de “erro de conexão”). O período é `dd/mm/aaaa` por segmento + painel, com validação **antes** do request.
+
+**Docker magro.** A imagem PHP já traz `pdo_pgsql` e OPcache. O entrypoint **só migra** (seed é opt-in). Compose: 4 workers no `artisan serve`, cache em arquivo, sessão em array, fila sync. Lista aquecida na casa de ~135–185 ms de TTFB — suficiente sem Kafka.
+
+**Superfície pequena.** Postgres e API escutam `127.0.0.1`. CORS só no Vite. Rate limit 60 req/min. Headers `nosniff` / `DENY`. Erros de API sem stack. Cartão SUS mascarado no cliente; o app **não inventa** identificador de saúde.
+
+O desafio **não pede login**. Autorização HTTP fica aberta no recorte local; a defesa é validação, máquina de estados e API mínima — não um IAM de faz-de-conta.
+
+---
+
+## Destaques técnicos
+
+| Área | Implementação |
+|------|----------------|
+| **Frontend** | React 19, TypeScript, Vite, TanStack Query, Axios, Lucide, tokens CSS (claro/escuro) |
+| **Backend** | PHP 8.4, Laravel 13, enums, Form Requests, resources JSON |
+| **Dados** | PostgreSQL 15, migrations, factory/seeder, índices na fila |
+| **Fila** | Paginação, busca, categoria, prioridade, status, período |
+| **Qualidade** | PHPUnit (API + transições), Vitest (datas, máscara, cache) |
+| **DevOps** | Docker Compose, healthcheck do Postgres, OPcache |
+
+---
+
+## Design e UX
+
+Fila de regulação: hierarquia clara (KPIs → filtros → tabela), tema SUS-verde, wordmark oficial (não recriada).
+
+| Princípio | Na prática |
+|-----------|------------|
+| **Leitura rápida** | Protocolo em destaque, badges de categoria/prioridade/status |
+| **Filtro na mesma linha** | Busca, categoria, prioridade, status, período e CTA sem scroll horizontal |
+| **Confiança** | Modal de detalhe com transições possíveis; inválidas nem aparecem |
+| **Acessibilidade** | `aria-*` nos filtros e modais, skip link, teclado nos dropdowns |
+
+Fluxos: **capturar** (nova solicitação) → **varrer a fila** (filtros + período) → **agir** (detalhe / próximo status).
+
+Sidebar vira drawer no estreito; o hamburger abre e fecha. Header (operador, conexão, tema, ações) alinha na mesma linha.
+
+---
+
+## Galeria
+
 ![Nova solicitação](docs/screenshots/nova-solicitacao.png)
+
+_**Criar** — validação no cliente e no Form Request; urgente pede justificativa._
 
 ![Detalhe da solicitação](docs/screenshots/detalhe-solicitacao.png)
 
-## Tecnologias Utilizadas
+_**Detalhe** — tema escuro; só os status legais da máquina de estados._
 
-### Frontend
-- **React** 19.2.8
-- **TypeScript** 6.0.2
-- **Vite** 8.3.0
-- **TanStack React Query** 5.103.1 (gerenciamento de estado assíncrono)
-- **Axios** 1.20.0 (cliente HTTP)
-- **Lucide React** 1.47.0 (ícones)
+---
 
-### Backend
-- **PHP** 8.4
-- **Laravel** 13.x
-- **PostgreSQL** 15
+## Funcionalidades
 
-### Infraestrutura
-- **Docker** e **Docker Compose**
+### Operação
 
-## Como Executar
+- KPIs da fila (total, recebidas, em análise, agendadas, críticas)
+- Listagem paginada com protocolo, solicitante, categoria, prioridade, status, data
+- Filtros + período de criação (`created_at`)
+- Criação com protocolo gerado no `creating` do model (`Str::random`)
+- Detalhe e avanço de status
 
-### Pré-requisitos
-- Docker Desktop instalado e em execução
-- Git
+### Interface
 
-### Passo a Passo
+- Tema claro/escuro persistente (trocar tema **não** fecha filtro/calendário)
+- Logo V-Lab oficial; favicon só com a cruz
+- Estados de loading, vazio e erro de API
 
-1. **Clone o repositório**
+### Fora deste recorte
+
+Autenticação, edição após criar (exceto status), exclusão, histórico de transições e logs estruturados. O `/up` do Laravel cobre o healthcheck do Compose.
+
+---
+
+## Stack
+
+**Frontend** — React 19 · TypeScript · Vite · TanStack Query · Axios · Lucide
+
+**Backend** — PHP 8.4 · Laravel 13 · PostgreSQL 15
+
+**Infra** — Docker Compose · OPcache · 4 workers PHP CLI
+
+---
+
+## Como executar
+
+Pré-requisitos: Docker Desktop e Git.
+
 ```bash
 git clone https://github.com/soninhoxs/Projeto-Vlab.git
 cd Projeto-Vlab
-```
-
-2. **Inicie os containers com Docker Compose**
-```bash
 docker compose up -d
 ```
 
-Isso irá iniciar:
-- **PostgreSQL** na porta 5432
-- **Backend Laravel** na porta 8000
-- **Frontend React** na porta 5173
+| Serviço | URL |
+|---------|-----|
+| Frontend | http://localhost:5173 |
+| API | http://localhost:8000/api/v1 |
 
-3. **Aguarde a inicialização**
-O backend sobe com imagem PHP já compilada (extensão PostgreSQL + OPcache) e executa **somente as migrations**. O seed não roda no start, para o container subir mais rápido. Para popular dados de exemplo:
+O backend espera o Postgres healthy e roda **migrations**. Seed (opcional):
 
 ```bash
 docker exec vlab_backend php artisan db:seed --force
 ```
 
-4. **Acesse a aplicação**
-- Frontend: http://localhost:5173
-- API: http://localhost:8000/api/v1
-
-### Variáveis de Ambiente
-
-O arquivo `docker-compose.yml` já contém as configurações necessárias. Para customização, as principais variáveis são:
-
-| Variável | Descrição | Valor Padrão |
-|----------|-----------|--------------|
-| POSTGRES_USER | Usuário do PostgreSQL | vlab_user |
-| POSTGRES_PASSWORD | Senha do PostgreSQL | vlab_password |
-| POSTGRES_DB | Nome do banco de dados | vlab_db |
-| VITE_API_URL | URL da API para o frontend | http://localhost:8000/api/v1 |
-
-## Arquitetura e Decisões Técnicas
-
-### Backend (Laravel)
-
-```
-backend/
-├── app/
-│   ├── Enums/           # Enums PHP 8.1+ para Categoria, Prioridade, Status
-│   ├── Http/
-│   │   ├── Controllers/Api/  # Controller REST
-│   │   └── Requests/         # Form Requests para validação
-│   ├── Models/               # Eloquent Model
-│   └── Services/             # StatusTransitionService + SolicitacaoQueryService
-├── database/
-│   ├── factories/            # Factory para dados fictícios
-│   ├── migrations/           # Versionamento do schema
-│   └── seeders/              # Seed inicial
-└── routes/
-    └── api.php               # Rotas versionadas (/api/v1)
-```
-
-#### Decisões de Arquitetura
-
-1. **Enums Tipados (PHP 8.1+)**: Utilizados para `Categoria`, `Prioridade` e `Status`, garantindo type safety e validação automática.
-
-2. **State Machine para Status**: Implementada no `StatusTransitionService`, centralizando as regras de transição:
-   - RECEBIDA → EM_ANALISE, CANCELADA
-   - EM_ANALISE → AGENDADA, CANCELADA
-   - AGENDADA → CONCLUIDA, CANCELADA
-   - CONCLUIDA/CANCELADA → (estados finais)
-
-3. **Form Requests**: Validação desacoplada do controller:
-   - `IndexSolicitacaoRequest`: Filtros de listagem, inclusive `data_inicio` / `data_fim` (Y-m-d)
-   - `StoreSolicitacaoRequest`: Valida criação com justificativa obrigatória para URGENTE
-   - `UpdateStatusRequest`: Valida transição de status
-
-4. **Protocolo Automático**: Gerado no evento `creating` do Model usando `Str::random(10)`.
-
-5. **Filtro por período**: `SolicitacaoQueryService` aplica intervalo em `created_at` (`>= início 00:00:00` e `<= fim 23:59:59`), sem `whereDate` por linha.
-
-6. **Desempenho no Docker**: imagem com OPcache; `PHP_CLI_SERVER_WORKERS=4`; `CACHE_STORE=file`, sessão em memória, fila síncrona; entrypoint só migra (seed manual). Lista aquecida na casa de ~135–185 ms de TTFB.
-
-### Frontend (React + TypeScript)
-
-```
-frontend/src/
-├── api/                 # Cliente HTTP + cache da lista
-├── components/
-│   ├── FilterBar.tsx
-│   ├── FilterSelect.tsx            # Categoria, prioridade, status
-│   ├── FilterDateRange.tsx         # Calendário de período
-│   ├── CreateSolicitacaoModal.tsx
-│   ├── SolicitacaoDetailModal.tsx
-│   ├── LogoVlab.tsx                # Wordmark oficial (PNG)
-│   ├── Header.tsx / Sidebar.tsx / ThemeToggle.tsx
-│   └── ...
-├── hooks/
-│   ├── useSolicitacoes.ts          # GET lista com filtros + paginação
-│   ├── useSolicitacao.ts           # GET individual
-│   └── useSolicitacoesMutations.ts # POST/PATCH + insert no cache
-├── utils/               # Datas (BR), máscara, clique fora
-├── types/
-└── styles/              # Tokens, layout, filtros, tema claro/escuro
-```
-
-#### Decisões de Arquitetura
-
-1. **React Query**: Gerencia cache, revalidação e estados de loading/error de forma declarativa.
-
-2. **Hooks Customizados**: Separação entre:
-   - `useSolicitacoes`: Listagem com filtros e paginação
-   - `useSolicitacoesMutations`: Criação e atualização de status
-
-3. **Tipagem Completa**: Interfaces TypeScript para todos os dados da API, evitando `any`.
-
-4. **Design System**: CSS com variáveis (tokens), temas claro/escuro, componentes reutilizáveis.
-
-5. **Acessibilidade**: Labels `aria-*`, roles semânticos, skip link, navegação por teclado nos filtros e modais.
-
-6. **Calendário próprio**: o período não usa `<input type="date">` nativo (overflow, seleção azul, data inválida indo para a API). Digitação por segmentos `dd/mm/aaaa` + painel com validação local.
-
-7. **Lista após criar**: o `201` confirmado pelo servidor é inserido no cache do React Query (página 1) e a query é invalidada em seguida — sem dado fake otimista.
-
-8. **Tema sem fechar filtros**: clique no toggle claro/escuro não conta como “clique fora”; categoria, prioridade, status e período permanecem abertos.
-
-### Segurança (alinhada ao padrão do dashboard V-Lab)
-
-Controles aplicados com base em OWASP / defesa em profundidade, no mesmo espírito do projeto aprovado ([Gov-combustiveis-dashboard-VLAB](https://github.com/alissonjcjk/Gov-combustiveis-dashboard-VLAB.git)): validação de entrada, mascaramento de identificadores e redução de superfície de ataque.
-
-| Controle | Onde | O que mitiga |
-|----------|------|----------------|
-| CORS restrito ao frontend | `config/cors.php` | Uso da API por origens não autorizadas |
-| Rate limit 60 req/min por IP | `AppServiceProvider` | Abuso e enumeração (DoS) |
-| Headers `nosniff` / `DENY` / Referrer | `SecurityHeaders` | Clickjacking e sniffing de MIME |
-| Form Requests + Enums | `Index/Store/UpdateStatus` | Injeção de filtros e dados inválidos |
-| Mass assignment limitado | `Solicitacao` fillable | Forjar `status` ou `protocolo` |
-| Escape de `%` e `_` na busca | `SolicitacaoQueryService` | Wildcard injection em LIKE |
-| `strip_tags` nos textos | `StoreSolicitacaoRequest` | XSS armazenado |
-| Erros de API sem stack trace | `bootstrap/app.php` | Information disclosure |
-| Postgres/API só em localhost | `docker-compose.yml` | Exposição da rede local |
-| Cartão SUS mascarado / sem dado inventado | `utils/mask.ts` | Vazamento de identificador de saúde |
-
-O desafio não exige login (fluxo interno de unidade), então a autorização HTTP permanece aberta no recorte local. A proteção fica na validação, na state machine e na superfície mínima da API.
-
-### Contrato entre Frontend e API
-
-| Endpoint | Método | Descrição |
-|----------|--------|-----------|
-| `/api/v1/solicitacoes` | GET | Lista paginada com filtros (`status`, `categoria`, `prioridade`, `busca`, `data_inicio`, `data_fim`) |
-| `/api/v1/solicitacoes` | POST | Cria nova solicitação |
-| `/api/v1/solicitacoes/{id}` | GET | Detalhes de uma solicitação |
-| `/api/v1/solicitacoes/{id}/status` | PATCH | Atualiza status respeitando state machine |
-
-## Funcionalidades Implementadas
-
-### Frontend
-- [x] Tela inicial com KPIs por status
-- [x] Listagem paginada de solicitações
-- [x] Filtros por status, categoria, prioridade, busca textual e período de criação
-- [x] Calendário customizado (digitação `dd/mm/aaaa`, validação local, sem date nativo)
-- [x] Barra de filtros em uma linha, sem scroll horizontal
-- [x] Formulário de criação com validação (justificativa obrigatória para URGENTE)
-- [x] Modal de criação reseta ao fechar; registro novo aparece na lista na hora
-- [x] Modal de detalhes com todas as informações
-- [x] Ação de atualização de status respeitando state machine
-- [x] Estados de loading, erro e vazio
-- [x] Tema claro/escuro (filtros abertos não fecham ao trocar o tema)
-- [x] Logo oficial V-Lab + favicon da cruz
-- [x] Menu hamburger abre e fecha; header alinhado na mesma linha
-- [x] Layout responsivo
-
-### Backend
-- [x] CRUD de solicitações (Create, Read)
-- [x] Atualização de status com validação de transições
-- [x] Protocolo único automático
-- [x] Validação de campos obrigatórios
-- [x] Justificativa obrigatória para prioridade URGENTE
-- [x] Paginação e filtros na listagem (incluindo período)
-- [x] Migrations e Seeders
-- [x] OPcache + workers no `artisan serve` via Docker
-
-## Atualizações desta versão (17/09/2026)
-
-Resumo do que entrou neste commit, para revisão e histórico:
-
-### Filtros
-- Filtro **Período** (início/fim) no backend (`data_inicio`, `data_fim`) e no frontend (`FilterDateRange`)
-- Calendário próprio: centralizado, seleção verde, datas inválidas (ex.: 99/99/9999) barradas no cliente — não viram erro falso de “servidor”
-- Categoria, prioridade e status em dropdown customizado, na mesma linha, mais largos até perto de **Nova Solicitação**
-- Fonte da barra mantida; painel do período não vaza da caixa
-
-### Criação e lista
-- Fechar o modal sem o X e abrir de novo não reaproveita o estado de sucesso
-- Após `201`, a linha confirmada pelo servidor entra no cache da lista (página 1) e a query é revalidada
-
-### Identidade e chrome
-- Wordmark oficial (`logo-vlab.png`, fundo transparente); não foi redesenhada
-- Favicon = só a cruz (a aba não usa mais a logo inteira em 16×16)
-- Título da página: **Solicitações**
-- Hamburger **abre e fecha** o menu
-- Header (operador, conexão, tema, sino, avatar) alinhado na mesma linha horizontal
-- Trocar o tema **não fecha** categoria, prioridade, status nem o calendário
-
-### Backend / Docker
-- Query de período em `created_at` (intervalo), não `whereDate`
-- Dockerfile com `pdo_pgsql` + OPcache; entrypoint só `migrate`
-- Compose: 4 workers PHP, cache file, sessão array, fila sync, `APP_DEBUG=false`
-- Testes de API do filtro por período; testes frontend de data e cache da lista
-
-## Funcionalidades Não Implementadas / Limitações
-
-- [ ] Autenticação e autorização
-- [ ] Edição de campos após criação (apenas status)
-- [ ] Exclusão de solicitações (soft delete)
-- [ ] Histórico de mudanças de status
-- [ ] Logs estruturados
-
-## Como Executar os Testes
-
-### Backend (PHPUnit)
-```bash
-docker exec vlab_backend php artisan test
-```
-
-Os testes incluem:
-- Testes unitários do `StatusTransitionService`
-- Testes de transições válidas e inválidas
-- Testes de API da listagem com `data_inicio` / `data_fim`
-
-### Frontend
-```bash
-cd frontend
-npm run test:run
-```
-
-Os testes incluem máscara do Cartão SUS, parsing/validação de datas BR e inserção da solicitação criada no cache da lista.
-
-## Especificação OpenAPI
-
-A especificação OpenAPI está disponível em:
-- Arquivo: `backend/docs/openapi.yaml`
-
-## Uso de Ferramentas de IA
-
-Este projeto foi desenvolvido com auxílio do **Cursor**. As ferramentas de IA foram utilizadas para:
-
-1. **Geração de código**: Componentes React, hooks, CSS, controllers Laravel
-2. **Debugging**: Identificação e correção de erros de CSS/layout
-3. **Arquitetura**: Sugestões de organização de código e boas práticas
-4. **Documentação**: Geração deste README e comentários de código
-
-Todo o código gerado foi revisado, compreendido e adaptado conforme necessário. A pessoa candidata é capaz de explicar todas as decisões técnicas e realizar modificações quando solicitado.
-
-## Estrutura do Docker Compose
-
-```yaml
-services:
-  db:         # PostgreSQL 15
-  backend:    # PHP 8.4 + Laravel (porta 8000)
-  frontend:   # Node 20 + Vite (porta 5173)
-```
-
-Os serviços iniciam em ordem:
-1. PostgreSQL (com healthcheck)
-2. Backend (aguarda o banco healthy, executa **migrations**; seed é opcional)
-3. Frontend (conecta ao backend via `VITE_API_URL`)
+Variáveis no `docker-compose.yml`. Modelo sem senha real: [`backend/.env.example`](backend/.env.example). Não commitar `.env`.
 
 ---
 
-Desenvolvido para o processo seletivo V-Lab Cln UFPE.
+## Estrutura do repositório
+
+```
+├── frontend/                 # SPA Vite
+│   └── src/
+│       ├── api/              # Axios + escrita no cache da lista
+│       ├── components/       # Fila, filtros, modais, layout
+│       ├── hooks/            # Query/mutations
+│       └── utils/            # Datas BR, máscara SUS
+├── backend/
+│   ├── app/
+│   │   ├── Enums/
+│   │   ├── Http/             # Controller, Requests, Resources
+│   │   ├── Models/
+│   │   └── Services/         # Query + state machine
+│   ├── database/             # migrations, factory, seeder
+│   ├── docs/openapi.yaml
+│   └── tests/
+├── docs/screenshots/
+└── docker-compose.yml
+```
+
+---
+
+## Testes
+
+```bash
+docker exec vlab_backend php artisan test
+cd frontend && npm run test:run
+```
+
+Backend: transições válidas/inválidas e listagem com `data_inicio` / `data_fim`.  
+Frontend: parsing de data BR, máscara do Cartão SUS, insert da linha criada no cache.
+
+---
+
+## Contato
+
+Projeto para o processo seletivo **V-Lab Cln UFPE** — full-stack, domínio de fila e API previsível.
+
+GitHub: [@soninhoxs](https://github.com/soninhoxs)
