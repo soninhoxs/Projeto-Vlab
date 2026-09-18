@@ -2,12 +2,13 @@
 
 namespace Tests\Feature;
 
-use Tests\TestCase;
-use App\Models\Solicitacao;
-use App\Enums\StatusEnum;
 use App\Enums\CategoriaEnum;
 use App\Enums\PrioridadeEnum;
+use App\Enums\StatusEnum;
+use App\Models\Solicitacao;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Tests\TestCase;
 
 class SolicitacaoApiTest extends TestCase
 {
@@ -33,7 +34,7 @@ class SolicitacaoApiTest extends TestCase
                         'prioridade',
                         'status',
                         'created_at',
-                    ]
+                    ],
                 ],
                 'total',
                 'last_page',
@@ -145,7 +146,7 @@ class SolicitacaoApiTest extends TestCase
                     'categoria',
                     'prioridade',
                     'status',
-                ]
+                ],
             ]);
 
         $this->assertDatabaseHas('solicitacoes', [
@@ -407,5 +408,37 @@ class SolicitacaoApiTest extends TestCase
             ->assertHeader('X-Content-Type-Options', 'nosniff')
             ->assertHeader('X-Frame-Options', 'DENY')
             ->assertHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    }
+
+    public function test_repeated_index_requests_are_served_from_cache_without_database_queries(): void
+    {
+        Solicitacao::factory()->count(3)->create();
+
+        $this->getJson('/api/v1/solicitacoes')->assertOk();
+
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+
+        $second = $this->getJson('/api/v1/solicitacoes')->assertOk();
+
+        $this->assertStringContainsString('max-age=30', (string) $second->headers->get('Cache-Control'));
+        $this->assertSame([], DB::getQueryLog());
+    }
+
+    public function test_index_cache_is_invalidated_after_create(): void
+    {
+        Solicitacao::factory()->count(2)->create();
+
+        $this->getJson('/api/v1/solicitacoes')->assertOk()->assertJsonPath('total', 2);
+
+        $this->postJson('/api/v1/solicitacoes', [
+            'nome_solicitante' => 'Cache Invalidation',
+            'categoria' => 'CONSULTA',
+            'prioridade' => 'BAIXA',
+        ])->assertCreated();
+
+        $this->getJson('/api/v1/solicitacoes')
+            ->assertOk()
+            ->assertJsonPath('total', 3);
     }
 }

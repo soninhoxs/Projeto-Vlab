@@ -32,9 +32,6 @@ class StatusTransitionService
     /**
      * Attempt to transition the status of a Solicitacao.
      *
-     * @param Solicitacao $solicitacao
-     * @param StatusEnum $newStatus
-     * @return bool
      * @throws ValidationException
      */
     public function transition(Solicitacao $solicitacao, StatusEnum $newStatus): bool
@@ -48,13 +45,14 @@ class StatusTransitionService
 
         $allowed = self::ALLOWED_TRANSITIONS[$currentStatus] ?? [];
 
-        if (!in_array($nextStatus, $allowed, true)) {
+        if (! in_array($nextStatus, $allowed, true)) {
             throw ValidationException::withMessages([
                 'status' => ["Transição de status inválida. Não é possível alterar de {$currentStatus} para {$nextStatus}."],
             ]);
         }
 
         $solicitacao->status = $newStatus;
+
         return $solicitacao->save();
     }
 }

@@ -1,17 +1,19 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Filtros, Solicitacao, PaginationData } from '../types';
 import { DEFAULT_FILTROS } from '../types';
 import { useDebouncedValue } from './useDebouncedValue';
 import {
   fetchSolicitacoes,
+  getNeighborPages,
   getSolicitacoesQueryKey,
   ITEMS_PER_PAGE,
   type AppliedFiltros,
 } from '../api/solicitacoes';
 import { validatePeriod } from '../utils/date';
+import { QUERY_REVALIDATE_INTERVAL_MS, QUERY_STALE_TIME_MS, isBlockingQueryFailure } from '../api/queryClient';
 
-const STALE_TIME_MS = 30_000;
+const STALE_TIME_MS = QUERY_STALE_TIME_MS;
 
 const mapApiItem = (item: Record<string, unknown>): Solicitacao => {
   let dataCriacao = item.dataCriacao as string | undefined;
@@ -81,32 +83,70 @@ export const useSolicitacoes = () => {
 
   const queryKey = getSolicitacoesQueryKey(appliedFiltros, currentPage);
 
-  const { data: apiResponse, isLoading, isFetching, isError, isPlaceholderData } = useQuery({
+  const {
+    data: apiResponse,
+    isLoading,
+    isFetching,
+    isError,
+    error: queryError,
+    isPlaceholderData,
+  } = useQuery({
     queryKey,
     queryFn: () => fetchSolicitacoes(appliedFiltros, currentPage),
     placeholderData: keepPreviousData,
     staleTime: STALE_TIME_MS,
-    retry: 1,
+    refetchInterval: QUERY_REVALIDATE_INTERVAL_MS,
+    refetchIntervalInBackground: false,
+    refetchOnReconnect: true,
+    retry: 2,
     enabled: periodValidation.valid,
   });
 
   const totalPages = apiResponse?.last_page || 1;
 
-  useEffect(() => {
-    const pagesToPrefetch = [currentPage - 1, currentPage + 1].filter(
-      (page) => page >= 1 && page <= totalPages,
-    );
+  const prefetchPage = useCallback(
+    (page: number): Promise<unknown> => {
+      if (!periodValidation.valid || page < 1 || page === currentPage) {
+        return Promise.resolve();
+      }
+      if (totalPages > 1 && page > totalPages) {
+        return Promise.resolve();
+      }
 
-    pagesToPrefetch.forEach((page) => {
-      if (!periodValidation.valid) return;
-
-      queryClient.prefetchQuery({
+      return queryClient.prefetchQuery({
         queryKey: getSolicitacoesQueryKey(appliedFiltros, page),
         queryFn: () => fetchSolicitacoes(appliedFiltros, page),
         staleTime: STALE_TIME_MS,
       });
-    });
-  }, [appliedFiltros, currentPage, totalPages, queryClient, periodValidation.valid]);
+    },
+    [appliedFiltros, currentPage, periodValidation.valid, queryClient, totalPages],
+  );
+
+  useEffect(() => {
+    if (!periodValidation.valid || totalPages < 2) {
+      return;
+    }
+
+    const pagesToPrefetch = getNeighborPages(currentPage, totalPages);
+    if (pagesToPrefetch.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      for (const page of pagesToPrefetch) {
+        if (cancelled) {
+          return;
+        }
+        await prefetchPage(page);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [appliedFiltros, currentPage, periodValidation.valid, prefetchPage, totalPages]);
 
   const currentData: Solicitacao[] = useMemo(() => {
     if (apiResponse?.data && Array.isArray(apiResponse.data)) {
@@ -183,12 +223,18 @@ export const useSolicitacoes = () => {
     currentData,
     paginationData,
     setCurrentPage,
+    prefetchPage,
     kpis,
     isLoading,
     isFetching,
+    isListRefreshing: isFetching && isPlaceholderData,
     isPlaceholderData,
-    isError,
+    isError: isBlockingQueryFailure(isError, Boolean(apiResponse?.data)),
     isSearchPending: filtros.busca !== debouncedBusca,
     periodoError: periodValidation.valid ? null : periodValidation.message,
+    loadErrorMessage:
+      isError && queryError instanceof Error
+        ? queryError.message
+        : 'Não foi possível carregar as solicitações.',
   };
 };

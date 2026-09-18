@@ -6,7 +6,7 @@ import { maskIdentifier } from '../utils/mask';
 interface TableProps {
   data: Solicitacao[];
   isLoading?: boolean;
-  isFetching?: boolean;
+  isRefreshing?: boolean;
   onViewDetails: (solicitacao: Solicitacao) => void;
 }
 
@@ -61,21 +61,15 @@ const formatCategory = (c: string) => {
   return c;
 };
 
-export const Table: React.FC<TableProps> = ({ data, isLoading, isFetching, onViewDetails }) => {
+export const Table: React.FC<TableProps> = ({ data, isLoading, isRefreshing, onViewDetails }) => {
   const showInitialLoading = Boolean(isLoading && data.length === 0);
-  const showRefreshing = Boolean(isFetching && data.length > 0);
 
   return (
     <section
-      className={`table-container${showRefreshing ? ' table-container--refreshing' : ''}`}
+      className={`table-container${isRefreshing ? ' table-container--refreshing' : ''}`}
       aria-label="Lista de solicitações de atendimento"
-      aria-busy={showInitialLoading || showRefreshing}
+      aria-busy={showInitialLoading || isRefreshing}
     >
-      {showRefreshing && (
-        <div className="table-container__refresh-indicator" role="status" aria-live="polite">
-          Atualizando lista...
-        </div>
-      )}
       <div className="table-wrapper">
         <table className="table" role="table">
           <caption className="sr-only">

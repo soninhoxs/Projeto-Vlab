@@ -2,16 +2,20 @@
 
 namespace App\Models;
 
+use App\Observers\SolicitacaoObserver;
 use App\Enums\CategoriaEnum;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use App\Enums\PrioridadeEnum;
 use App\Enums\StatusEnum;
+use Database\Factories\SolicitacaoFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 
+#[ObservedBy([SolicitacaoObserver::class])]
 class Solicitacao extends Model
 {
-    /** @use HasFactory<\Database\Factories\SolicitacaoFactory> */
+    /** @use HasFactory<SolicitacaoFactory> */
     use HasFactory;
 
     protected $table = 'solicitacoes';

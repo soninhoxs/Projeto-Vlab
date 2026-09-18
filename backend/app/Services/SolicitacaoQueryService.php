@@ -6,12 +6,14 @@ use App\Enums\CategoriaEnum;
 use App\Enums\PrioridadeEnum;
 use App\Enums\StatusEnum;
 use App\Models\Solicitacao;
+use App\Support\Cache\SolicitacaoSummaryCache;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Cache;
 
 class SolicitacaoQueryService
 {
     /**
-     * @param array{status?: string, categoria?: string, prioridade?: string, busca?: string, data_inicio?: string, data_fim?: string} $filters
+     * @param  array{status?: string, categoria?: string, prioridade?: string, busca?: string, data_inicio?: string, data_fim?: string}  $filters
      */
     public function applyFilters(array $filters): Builder
     {
@@ -45,9 +47,23 @@ class SolicitacaoQueryService
     }
 
     /**
+     * @param  array<string, mixed>  $filters
      * @return array{total: int, recebidas: int, em_analise: int, agendadas: int, urgentes: int}
      */
-    public function buildSummary(Builder $query): array
+    public function buildSummary(Builder $query, array $filters = []): array
+    {
+        $ttl = max(1, (int) config('vlab.summary_cache_seconds', 15));
+        $cacheKey = SolicitacaoSummaryCache::key($filters);
+
+        return Cache::remember($cacheKey, $ttl, function () use ($query): array {
+            return $this->computeSummary($query);
+        });
+    }
+
+    /**
+     * @return array{total: int, recebidas: int, em_analise: int, agendadas: int, urgentes: int}
+     */
+    private function computeSummary(Builder $query): array
     {
         $base = (clone $query)->reorder();
 

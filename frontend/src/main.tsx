@@ -1,7 +1,8 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import App from './App.tsx';
+import { createAppQueryClient } from './api/queryClient';
 
 import './styles/tokens.css';
 import './styles/reset.css';
@@ -11,17 +12,15 @@ import './styles/table.css';
 import './styles/filters.css';
 import './styles/theme-toggle.css';
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      refetchOnWindowFocus: false,
-      staleTime: 30_000,
-      gcTime: 5 * 60_000,
-    },
-  },
-});
+const queryClient = createAppQueryClient();
 
-createRoot(document.getElementById('root')!).render(
+const rootElement = document.getElementById('root');
+
+if (!rootElement) {
+  throw new Error('Elemento #root não encontrado.');
+}
+
+createRoot(rootElement).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <App />

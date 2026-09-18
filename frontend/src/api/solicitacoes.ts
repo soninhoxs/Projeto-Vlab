@@ -3,6 +3,7 @@ import { api, sanitizeSearch } from './client';
 import type { Filtros } from '../types';
 
 export const ITEMS_PER_PAGE = 7;
+export const PREFETCH_AHEAD_PAGES = 3;
 
 export interface SolicitacoesSummary {
   total: number;
@@ -50,6 +51,32 @@ export async function fetchSolicitacoes(
 
 export function getSolicitacoesQueryKey(filtros: AppliedFiltros, page: number) {
   return ['solicitacoes', filtros, page] as const;
+}
+
+export function getNeighborPages(
+  currentPage: number,
+  totalPages: number,
+  ahead = PREFETCH_AHEAD_PAGES,
+): number[] {
+  if (currentPage < 1 || totalPages < 2 || ahead < 1) {
+    return [];
+  }
+
+  const pages: number[] = [];
+
+  for (let offset = 1; offset <= ahead; offset += 1) {
+    const next = currentPage + offset;
+    if (next <= totalPages) {
+      pages.push(next);
+    }
+  }
+
+  const previous = currentPage - 1;
+  if (previous >= 1) {
+    pages.push(previous);
+  }
+
+  return pages;
 }
 
 export function matchesListFilters(item: Record<string, unknown>, filtros: AppliedFiltros): boolean {

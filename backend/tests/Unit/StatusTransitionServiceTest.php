@@ -2,12 +2,12 @@
 
 namespace Tests\Unit;
 
-use Tests\TestCase; // Must use standard TestCase to boot Laravel for models
+use App\Enums\StatusEnum; // Must use standard TestCase to boot Laravel for models
 use App\Models\Solicitacao;
-use App\Enums\StatusEnum;
 use App\Services\StatusTransitionService;
-use Illuminate\Validation\ValidationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
+use Tests\TestCase;
 
 class StatusTransitionServiceTest extends TestCase
 {
@@ -16,7 +16,7 @@ class StatusTransitionServiceTest extends TestCase
     public function test_it_allows_valid_transition()
     {
         $solicitacao = Solicitacao::factory()->create(['status' => StatusEnum::RECEBIDA]);
-        $service = new StatusTransitionService();
+        $service = new StatusTransitionService;
 
         $result = $service->transition($solicitacao, StatusEnum::EM_ANALISE);
 
@@ -27,7 +27,7 @@ class StatusTransitionServiceTest extends TestCase
     public function test_it_prevents_invalid_transition()
     {
         $solicitacao = Solicitacao::factory()->create(['status' => StatusEnum::RECEBIDA]);
-        $service = new StatusTransitionService();
+        $service = new StatusTransitionService;
 
         $this->expectException(ValidationException::class);
         $this->expectExceptionMessage('Transição de status inválida');
@@ -39,7 +39,7 @@ class StatusTransitionServiceTest extends TestCase
     public function test_it_allows_cancellation_from_any_valid_state()
     {
         $solicitacao = Solicitacao::factory()->create(['status' => StatusEnum::AGENDADA]);
-        $service = new StatusTransitionService();
+        $service = new StatusTransitionService;
 
         $result = $service->transition($solicitacao, StatusEnum::CANCELADA);
 

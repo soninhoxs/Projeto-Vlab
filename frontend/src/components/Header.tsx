@@ -46,7 +46,16 @@ export const Header: React.FC<HeaderProps> = ({ isMenuOpen, onMenuClick }) => {
           <Bell size={20} aria-hidden="true" />
         </button>
 
-        <button type="button" className="header__avatar" aria-label="Menu do perfil do usuário">
+        <button
+          type="button"
+          className="header__avatar"
+          aria-label="Perfil do operador (em breve: menu da conta)"
+          title="Perfil do operador"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+        >
           <User size={20} aria-hidden="true" />
         </button>
       </div>

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  getNeighborPages,
   insertCreatedIntoList,
   matchesListFilters,
   type SolicitacoesApiResponse,
@@ -30,6 +31,24 @@ const list: SolicitacoesApiResponse = {
     urgentes: 0,
   },
 };
+
+describe('getNeighborPages', () => {
+  it('prefetches the next three pages from the first page', () => {
+    expect(getNeighborPages(1, 5)).toEqual([2, 3, 4]);
+  });
+
+  it('includes the previous page after the next pages', () => {
+    expect(getNeighborPages(3, 8)).toEqual([4, 5, 6, 2]);
+  });
+
+  it('stops at the last page', () => {
+    expect(getNeighborPages(4, 5)).toEqual([5, 3]);
+  });
+
+  it('returns an empty list when there is only one page', () => {
+    expect(getNeighborPages(1, 1)).toEqual([]);
+  });
+});
 
 describe('solicitacoes cache helpers', () => {
   it('matches default filters', () => {

@@ -30,7 +30,7 @@ Filas de atendimento misturam busca, período, prioridade e ciclo de vida do ped
 
 - **Domínio no servidor** — enums, state machine e Form Requests; o cliente não inventa transição.
 - **Consulta em um serviço** — filtros (status, categoria, prioridade, busca, período) isolados do controller.
-- **SPA com cache honesto** — React Query; o `201` confirmado entra na lista, sem linha fake.
+- **SPA com cache honesto** — TanStack Query; o `201` confirmado entra na lista, sem linha fake. Páginas vizinhas são pré-carregadas; a fila revalida em segundo plano sem derrubar a tela.
 - **Um Compose** — Postgres + API + Vite; OPcache e workers no PHP para TTFB previsível.
 
 ---
@@ -57,25 +57,29 @@ flowchart TB
 
     subgraph Dados
         PG[(PostgreSQL 15)]
+        Cache[(Cache de leitura)]
     end
 
     RQ -->|GET / POST / PATCH| Ctrl
     QS --> PG
     SM --> PG
+    Ctrl --> Cache
 ```
 
 Fluxo: o browser fala só com `/api/v1`. Listagem e filtros passam pelo `SolicitacaoQueryService`. Criação valida no `StoreSolicitacaoRequest` e gera protocolo no model. Mudança de status passa pelo `StatusTransitionService` — estados finais (`CONCLUIDA`, `CANCELADA`) não voltam.
 
-Não há fila, Redis nem barramento. Para este recorte, I/O síncrono + índices no Postgres é o caminho certo.
+Não há fila, Redis nem barramento. Para este recorte, I/O síncrono + índices no Postgres + cache de leitura é o caminho certo.
 
 ### Contrato da API
 
-| Método | Endpoint | Papel |
-|--------|----------|--------|
-| `GET` | `/api/v1/solicitacoes` | Lista paginada + filtros |
-| `POST` | `/api/v1/solicitacoes` | Cria (protocolo no servidor) |
-| `GET` | `/api/v1/solicitacoes/{id}` | Detalhe |
-| `PATCH` | `/api/v1/solicitacoes/{id}/status` | Transição validada |
+| Método | Endpoint | Papel | Por que este verbo |
+|--------|----------|--------|--------------------|
+| `GET` | `/api/v1/solicitacoes` | Lista paginada + filtros + KPIs | Leitura; pode ir em cache |
+| `POST` | `/api/v1/solicitacoes` | Cria (protocolo no servidor) | Recurso novo; status começa em `RECEBIDA` |
+| `GET` | `/api/v1/solicitacoes/{id}` | Detalhe | Leitura pontual |
+| `PATCH` | `/api/v1/solicitacoes/{id}/status` | Só o próximo status | Atualização parcial; a máquina de estados decide |
+
+**Não há** `PUT` (substituiria o registro inteiro), `DELETE` (fora do recorte) nem tela de login. CORS libera só `GET`, `POST`, `PATCH` e `OPTIONS`.
 
 Filtros de listagem: `status`, `categoria`, `prioridade`, `busca`, `data_inicio`, `data_fim` (`Y-m-d`). Período aplica intervalo em `created_at` (`>= 00:00:00` / `<= 23:59:59`), não `whereDate` por linha.
 
@@ -98,15 +102,37 @@ O PATCH só aplica o que o serviço autoriza. Isso evita status “inventado” 
 
 **Query object para a fila.** `SolicitacaoQueryService` monta o SELECT: LIKE com escape de `%`/`_`, enums, período. O controller não acumula `if`.
 
-**Cache da lista = dado do servidor.** Depois do POST `201`, o frontend grava o payload confirmado no React Query (página 1) e invalida a query. Não há insert otimista com id local — o protocolo que aparece é o mesmo do banco.
+**Cache em duas camadas.** A listagem não consulta o Postgres a cada clique.
+
+| Camada | Onde | TTL | Invalidação |
+|--------|------|-----|-------------|
+| **Cliente** | TanStack Query (+ `sessionStorage`) | fresco 30 s; revalida a cada 45 s | criar / mudar status |
+| **API** | `Cache::remember` da página + KPIs | 30 s (lista), 15 s (summary) | `SolicitacaoObserver` sobe a versão da chave |
+
+O dashboard faz *stale-while-revalidate*: mostra o cache na hora e confirma em segundo plano. Se a API falhar no ciclo, a tabela **não some**. Prefetch: as 3 páginas seguintes e a anterior; hover no número também dispara. Depois do POST `201`, o frontend grava o payload confirmado no React Query (página 1) e invalida a query. Não há insert otimista com id local.
 
 **Calendário próprio.** `<input type="date">` nativo estourava o layout, pintava seleção azul e mandava `99/99/9999` para a API (422 disfarçado de “erro de conexão”). O período é `dd/mm/aaaa` por segmento + painel, com validação **antes** do request.
 
-**Docker magro.** A imagem PHP já traz `pdo_pgsql` e OPcache. O entrypoint **só migra** (seed é opt-in). Compose: 4 workers no `artisan serve`, cache em arquivo, sessão em array, fila sync. Lista aquecida na casa de ~135–185 ms de TTFB — suficiente sem Kafka.
+**Docker magro.** A imagem PHP já traz `pdo_pgsql` e OPcache. O entrypoint **só migra** (seed é opt-in). Compose: 4 workers no `artisan serve`, cache em arquivo, sessão em array, fila sync.
 
-**Superfície pequena.** Postgres e API escutam `127.0.0.1`. CORS só no Vite. Rate limit 60 req/min. Headers `nosniff` / `DENY`. Erros de API sem stack. Cartão SUS mascarado no cliente; o app **não inventa** identificador de saúde.
+**Superfície pequena e validação no servidor.** O desafio **não pede login**. A defesa do recorte local é API mínima + integridade, não IAM:
 
-O desafio **não pede login**. Autorização HTTP fica aberta no recorte local; a defesa é validação, máquina de estados e API mínima — não um IAM de faz-de-conta.
+| Controle | Como |
+|----------|------|
+| Bind | Postgres e API em `127.0.0.1` |
+| CORS | só `http://localhost:5173`; métodos `GET/POST/PATCH/OPTIONS` |
+| Rate limit | 60 req/min por IP |
+| Headers | `nosniff`, `DENY`, `Referrer-Policy`, `Permissions-Policy` |
+| Erros | JSON sem stack (`APP_DEBUG=false` no Compose) |
+| Create | nome 3–120, só letras; HTML stripped; URGENTE exige justificativa |
+| Lista | enums nos filtros; busca máx. 100; LIKE com escape de `%`/`_` |
+| Status | PATCH só `{ status }`; transições ilegais → 422 |
+| Mass assignment | `status` e `protocolo` **não** são fillable |
+| PII na UI | Cartão SUS mascarado; o app **não inventa** CNS |
+
+`API_AUTH_ENABLED` existe no backend (Sanctum) mas **vem desligado**. A fila abre direto em http://localhost:5173.
+
+**Logs HTTP em JSON.** Cada request na API ganha `X-Request-Id`; o canal `api` grava método, rota, status, duração e contexto sanitizado (sem senha/token). Falhas 5xx sobem de nível; 4xx do cliente não viram ruído de incidente.
 
 ---
 
@@ -118,7 +144,7 @@ O desafio **não pede login**. Autorização HTTP fica aberta no recorte local; 
 | **Backend** | PHP 8.4, Laravel 13, enums, Form Requests, resources JSON |
 | **Dados** | PostgreSQL 15, migrations, factory/seeder, índices na fila |
 | **Fila** | Paginação, busca, categoria, prioridade, status, período |
-| **Qualidade** | PHPUnit (API + transições), Vitest (datas, máscara, cache) |
+| **Qualidade** | PHPUnit (API + transições + cache + logs), Vitest (datas, máscara, cache) |
 | **DevOps** | Docker Compose, healthcheck do Postgres, OPcache |
 
 ---
@@ -201,11 +227,11 @@ _**Detalhe** — tema escuro; só os status legais da máquina de estados._
 
 - Tema claro/escuro persistente (trocar tema **não** fecha filtro/calendário)
 - Logo V-Lab oficial; favicon só com a cruz
-- Estados de loading, vazio e erro de API
+- Estados de loading, vazio e erro de API (erro bloqueante só se não houver cache)
 
 ### Fora deste recorte
 
-Autenticação, edição após criar (exceto status), exclusão, histórico de transições e logs estruturados. O `/up` do Laravel cobre o healthcheck do Compose.
+Autenticação de operador, edição após criar (exceto status), exclusão e histórico de transições. O `/up` do Laravel cobre o healthcheck do Compose.
 
 ---
 
@@ -234,13 +260,13 @@ docker compose up -d
 | Frontend | http://localhost:5173 |
 | API | http://localhost:8000/api/v1 |
 
-O backend espera o Postgres healthy e roda **migrations**. Seed (opcional):
+O backend espera o Postgres healthy e roda **migrations**. Não há tela de login. Seed (dados de exemplo, opcional):
 
 ```bash
 docker exec vlab_backend php artisan db:seed --force
 ```
 
-Variáveis no `docker-compose.yml`. Modelo sem senha real: [`backend/.env.example`](backend/.env.example). Não commitar `.env`.
+Variáveis no `docker-compose.yml` (`VLAB_LIST_CACHE_SECONDS=30`, `VLAB_SUMMARY_CACHE_SECONDS=15`). Modelo: [`backend/.env.example`](backend/.env.example) e [`frontend/.env.example`](frontend/.env.example). Não commitar `.env`.
 
 ---
 
@@ -249,23 +275,24 @@ Variáveis no `docker-compose.yml`. Modelo sem senha real: [`backend/.env.exampl
 ```
 ├── frontend/                 # SPA Vite
 │   └── src/
-│       ├── api/              # Axios + escrita no cache da lista
+│       ├── api/              # Axios, React Query, cache da lista
 │       ├── components/       # Fila, filtros, modais, layout
-│       ├── hooks/            # Query/mutations
-│       └── utils/            # Datas BR, máscara SUS
+│       ├── hooks/            # Query, prefetch, mutations
+│       └── utils/            # Datas BR, máscara SUS, HTTP status
 ├── backend/
 │   ├── app/
 │   │   ├── Enums/
 │   │   ├── Http/             # Controller, Requests, Resources
-│   │   ├── Models/
-│   │   └── Services/         # Query + state machine
-│   ├── database/             # migrations, factory, seeder
+│   │   ├── Models/ + Observers + Policies
+│   │   ├── Services/         # Query, state machine, log HTTP
+│   │   └── Support/Cache/    # Chaves versionadas da listagem
+│   ├── database/             # migrations, factory, seeder, índices
 │   ├── docs/openapi.yaml
 │   └── tests/
 ├── docs/
 │   ├── logo-vlab.png
 │   ├── favicon.png
-│   ├── design-system.png     # Paleta, tipo e componentes
+│   ├── design-system.png
 │   └── screenshots/
 └── docker-compose.yml
 ```
@@ -279,8 +306,8 @@ docker exec vlab_backend php artisan test
 cd frontend && npm run test:run
 ```
 
-Backend: transições válidas/inválidas e listagem com `data_inicio` / `data_fim`.  
-Frontend: parsing de data BR, máscara do Cartão SUS, insert da linha criada no cache.
+Backend: transições válidas/inválidas, listagem com período, cache da fila sem query repetida, headers e logs HTTP.  
+Frontend: data BR, máscara SUS, insert no cache, páginas vizinhas (prefetch) e persistência do React Query.
 
 ---
 

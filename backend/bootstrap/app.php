@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Middleware\AssignRequestId;
+use App\Http\Middleware\LogHttpResponse;
 use App\Http\Middleware\SecurityHeaders;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -16,8 +18,20 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->redirectGuestsTo(function (Request $request): ?string {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return null;
+            }
+
+            return null;
+        });
+
         $middleware->append(SecurityHeaders::class);
         $middleware->throttleApi('api');
+        $middleware->api(prepend: [
+            AssignRequestId::class,
+        ]);
+        $middleware->append(LogHttpResponse::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

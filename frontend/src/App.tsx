@@ -3,6 +3,7 @@ import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { KpiCards } from './components/KpiCards';
 import { FilterBar } from './components/FilterBar';
+import { ListRefreshBanner } from './components/ListRefreshBanner';
 import { Table } from './components/Table';
 import { Pagination } from './components/Pagination';
 import { CreateSolicitacaoModal } from './components/CreateSolicitacaoModal';
@@ -20,11 +21,13 @@ function App() {
     setFiltros, 
     currentData, 
     paginationData, 
-    setCurrentPage, 
+    setCurrentPage,
+    prefetchPage,
     kpis,
     isLoading,
-    isFetching,
+    isListRefreshing,
     isError,
+    loadErrorMessage,
     isSearchPending,
     periodoError,
     resetListToDefault,
@@ -67,21 +70,24 @@ function App() {
 
           {isError && (
             <div className="main__alert main__alert--error" role="alert">
-              Erro ao carregar os dados. Verifique sua conexão com o servidor.
+              {loadErrorMessage}
             </div>
           )}
+
+          <ListRefreshBanner active={isListRefreshing || isSearchPending} />
 
           <Table 
             data={currentData} 
             isLoading={isLoading} 
-            isFetching={isFetching}
+            isRefreshing={isListRefreshing}
             onViewDetails={(solicitacao) => setSelectedSolicitacao(solicitacao)}
           />
 
           <Pagination 
             pagination={paginationData}
             onPageChange={setCurrentPage}
-            isFetching={isFetching}
+            onPrefetchPage={prefetchPage}
+            isFetching={isListRefreshing}
           />
       </main>
 

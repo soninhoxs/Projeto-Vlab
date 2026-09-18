@@ -5,10 +5,16 @@ import type { PaginationData } from '../types';
 interface PaginationProps {
   pagination: PaginationData;
   onPageChange: (page: number) => void;
+  onPrefetchPage?: (page: number) => void;
   isFetching?: boolean;
 }
 
-export const Pagination: React.FC<PaginationProps> = ({ pagination, onPageChange, isFetching }) => {
+export const Pagination: React.FC<PaginationProps> = ({
+  pagination,
+  onPageChange,
+  onPrefetchPage,
+  isFetching,
+}) => {
   const { currentPage, totalPages, totalItems, itemsPerPage, pages } = pagination;
   
   if (totalPages <= 1) return null;
@@ -28,6 +34,8 @@ export const Pagination: React.FC<PaginationProps> = ({ pagination, onPageChange
           aria-label="Página anterior"
           disabled={currentPage === 1}
           onClick={() => onPageChange(currentPage - 1)}
+          onMouseEnter={() => onPrefetchPage?.(currentPage - 1)}
+          onFocus={() => onPrefetchPage?.(currentPage - 1)}
         >
           <ChevronLeft size={20} aria-hidden="true" />
         </button>
@@ -49,6 +57,8 @@ export const Pagination: React.FC<PaginationProps> = ({ pagination, onPageChange
                   aria-label={currentPage === page ? `Página ${page} atual` : `Ir para página ${page}`}
                   aria-current={currentPage === page ? 'page' : undefined}
                   onClick={() => onPageChange(page)}
+                  onMouseEnter={() => onPrefetchPage?.(page)}
+                  onFocus={() => onPrefetchPage?.(page)}
                 >
                   {page}
                 </button>
@@ -62,6 +72,8 @@ export const Pagination: React.FC<PaginationProps> = ({ pagination, onPageChange
           aria-label="Próxima página"
           disabled={currentPage === totalPages}
           onClick={() => onPageChange(currentPage + 1)}
+          onMouseEnter={() => onPrefetchPage?.(currentPage + 1)}
+          onFocus={() => onPrefetchPage?.(currentPage + 1)}
         >
           <ChevronRight size={20} aria-hidden="true" />
         </button>
