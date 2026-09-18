@@ -125,7 +125,7 @@ O desafio **não pede login**. Autorização HTTP fica aberta no recorte local; 
 
 ## Design e UX
 
-Fila de regulação: hierarquia clara (KPIs → filtros → tabela) e paleta SUS-verde.
+Fila de regulação: hierarquia clara (KPIs → filtros → tabela), marca própria e design system (paleta, Public Sans, componentes).
 
 ### Identidade visual
 
@@ -144,6 +144,23 @@ A marca do app é a **logo criada para o V-Lab** — cruz + wordmark. Não foi r
 | Wordmark | [`docs/logo-vlab.png`](docs/logo-vlab.png) · [`frontend/public/logo-vlab.png`](frontend/public/logo-vlab.png) | Sidebar e header |
 | Cruz (favicon) | [`docs/favicon.png`](docs/favicon.png) · [`frontend/public/favicon.png`](frontend/public/favicon.png) | Ícone da aba (16×16); a logo inteira ilegível nesse tamanho |
 | Vetor | [`docs/logo-vlab.svg`](docs/logo-vlab.svg) | Fonte vetorial da marca |
+
+### Design system
+
+Board de cor, tipo e componentes da identidade:
+
+![Design system V-Lab](docs/design-system.png)
+
+| Token | Hex | Papel |
+|-------|-----|--------|
+| **Primary** | `#235347` | Ação principal, ênfase |
+| **Secondary** | `#0B2B26` | Superfície invertida, contraste alto |
+| **Tertiary** | `#8EB69B` | Apoio, chips, estados suaves |
+| **Neutral** | `#051F20` | Texto e fundo profundo |
+
+**Tipo:** Public Sans — headline, body e label na mesma família (hierarquia por peso/tamanho, não por fonte extra).
+
+**Componentes do board:** botões Primary / Secondary / Inverted / Outlined, campo de busca, navegação icônica, chips e ações (anexo, label, excluir).
 
 | Princípio | Na prática |
 |-----------|------------|
@@ -246,8 +263,9 @@ Variáveis no `docker-compose.yml`. Modelo sem senha real: [`backend/.env.exampl
 │   ├── docs/openapi.yaml
 │   └── tests/
 ├── docs/
-│   ├── logo-vlab.png         # Marca (wordmark)
-│   ├── favicon.png           # Cruz para a aba
+│   ├── logo-vlab.png
+│   ├── favicon.png
+│   ├── design-system.png     # Paleta, tipo e componentes
 │   └── screenshots/
 └── docker-compose.yml
 ```
