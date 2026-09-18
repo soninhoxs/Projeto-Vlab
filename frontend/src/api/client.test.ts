@@ -59,7 +59,7 @@ describe('resolveApiErrorMessage', () => {
         status: 422,
         statusText: 'Unprocessable Content',
         headers: {},
-        config: { headers: {} },
+        config: { headers: new AxiosHeaders() },
         data: {
           message: 'The nome solicitante field is required.',
           errors: {

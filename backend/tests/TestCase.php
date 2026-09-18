@@ -22,6 +22,8 @@ abstract class TestCase extends BaseTestCase
         $app['config']->set('database.connections.sqlite.url', null);
         $app['config']->set('database.connections.sqlite.database', ':memory:');
         $app['config']->set('cache.default', 'array');
+        $app['config']->set('http_logging.enabled', true);
+        $app['config']->set('logging.default', 'stack');
 
         return $app;
     }

@@ -27,7 +27,7 @@ class HttpRequestLoggingTest extends TestCase
         return $captured;
     }
 
-    public function test_successful_list_logs_http_response_at_info(): void
+    public function test_fast_successful_list_skips_http_response_log(): void
     {
         config(['http_logging.enabled' => true, 'http_logging.channel' => 'api']);
         $logged = $this->captureLoggedMessages();
@@ -40,11 +40,33 @@ class HttpRequestLoggingTest extends TestCase
         $response->assertHeader('X-Request-Id');
 
         $httpLog = $logged->first(
+            fn (MessageLogged $entry) => $entry->message === 'http.response',
+        );
+
+        $this->assertNull($httpLog);
+    }
+
+    public function test_successful_create_logs_http_response_at_info(): void
+    {
+        config(['http_logging.enabled' => true, 'http_logging.channel' => 'api']);
+        $logged = $this->captureLoggedMessages();
+
+        $response = $this->postJson('/api/v1/solicitacoes', [
+            'nome_solicitante' => 'João da Silva',
+            'categoria' => 'CONSULTA',
+            'prioridade' => 'MEDIA',
+            'descricao' => 'Descrição de teste',
+        ]);
+
+        $response->assertCreated();
+        $response->assertHeader('X-Request-Id');
+
+        $httpLog = $logged->first(
             fn (MessageLogged $entry) => $entry->message === 'http.response' && $entry->level === 'info',
         );
 
         $this->assertNotNull($httpLog);
-        $this->assertSame(200, $httpLog->context['status_code'] ?? null);
+        $this->assertSame(201, $httpLog->context['status_code'] ?? null);
         $this->assertSame('http.response', $httpLog->context['event'] ?? null);
         $this->assertArrayHasKey('request_id', $httpLog->context);
         $this->assertArrayHasKey('duration_ms', $httpLog->context);
