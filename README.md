@@ -30,8 +30,8 @@ Filas de atendimento misturam busca, período, prioridade e ciclo de vida do ped
 
 - **Domínio no servidor** — enums, state machine e Form Requests; o cliente não inventa transição.
 - **Consulta em um serviço** — filtros (status, categoria, prioridade, busca, período) isolados do controller.
-- **SPA com cache honesto** — TanStack Query; o `201` confirmado entra na lista, sem linha fake. Páginas vizinhas são pré-carregadas; a fila revalida em segundo plano sem derrubar a tela.
-- **Um Compose** — Postgres + API + Vite; OPcache e workers no PHP para TTFB previsível.
+- **SPA com cache honesto** — TanStack Query; o `201` confirmado entra na página 1, sem linha fake e **sem refetch de todas as páginas**. A lista só busca de novo quando o operador muda página ou filtro (fresco por 5 min).
+- **Um Compose** — Postgres + API + Vite; `vendor` em volume Linux, OPcache e 8 workers no PHP para o bind mount do Windows não travar cada GET.
 
 ---
 
@@ -66,7 +66,7 @@ flowchart TB
     Ctrl --> Cache
 ```
 
-Fluxo: o browser fala só com `/api/v1`. Listagem e filtros passam pelo `SolicitacaoQueryService`. Criação valida no `StoreSolicitacaoRequest` e gera protocolo no model. Mudança de status passa pelo `StatusTransitionService` — estados finais (`CONCLUIDA`, `CANCELADA`) não voltam.
+Fluxo: o browser fala só com `/api/v1`. Listagem e filtros passam pelo `SolicitacaoQueryService`. Criação valida no `StoreSolicitacaoRequest` e gera protocolo no model. Mudança de status passa pelo `StatusTransitionService` — estados finais (`CONCLUIDA`, `CANCELADA`) não voltam. Create e PATCH gravam `solicitacao_status_historico` na mesma transação.
 
 Não há fila, Redis nem barramento. Para este recorte, I/O síncrono + índices no Postgres + cache de leitura é o caminho certo.
 
@@ -76,14 +76,14 @@ Não há fila, Redis nem barramento. Para este recorte, I/O síncrono + índices
 |--------|----------|--------|--------------------|
 | `GET` | `/api/v1/solicitacoes` | Lista paginada + filtros + KPIs | Leitura; pode ir em cache |
 | `POST` | `/api/v1/solicitacoes` | Cria (protocolo no servidor) | Recurso novo; status começa em `RECEBIDA` |
-| `GET` | `/api/v1/solicitacoes/{id}` | Detalhe | Leitura pontual |
+| `GET` | `/api/v1/solicitacoes/{id}` | Detalhe + histórico de status | Leitura pontual |
 | `PATCH` | `/api/v1/solicitacoes/{id}/status` | Só o próximo status | Atualização parcial; a máquina de estados decide |
 
 **Não há** `PUT` (substituiria o registro inteiro), `DELETE` (fora do recorte) nem tela de login. CORS libera só `GET`, `POST`, `PATCH` e `OPTIONS`.
 
 Filtros de listagem: `status`, `categoria`, `prioridade`, `busca`, `data_inicio`, `data_fim` (`Y-m-d`). Período aplica intervalo em `created_at` (`>= 00:00:00` / `<= 23:59:59`), não `whereDate` por linha.
 
-OpenAPI: [`backend/docs/openapi.yaml`](backend/docs/openapi.yaml)
+OpenAPI: [`backend/docs/openapi.yaml`](backend/docs/openapi.yaml) — alinhado ao Form Request (sem Cartão SUS, sem datas inventadas no create; `historico_status` no detalhe).
 
 ---
 
@@ -102,18 +102,25 @@ O PATCH só aplica o que o serviço autoriza. Isso evita status “inventado” 
 
 **Query object para a fila.** `SolicitacaoQueryService` monta o SELECT: LIKE com escape de `%`/`_`, enums, período. O controller não acumula `if`.
 
-**Cache em duas camadas.** A listagem não consulta o Postgres a cada clique.
+**Histórico de status na mesma transação.** Cada `create` e cada `transition` grava `solicitacao_status_historico`. O `GET` de detalhe devolve a trilha; o modal não inventa datas. Colisão de protocolo no `creating` tenta de novo em vez de 500.
+
+**Cache em duas camadas.** A listagem não consulta o Postgres a cada clique e **não despeja milhares de linhas** — 7 por página.
 
 | Camada | Onde | TTL | Invalidação |
 |--------|------|-----|-------------|
-| **Cliente** | TanStack Query (+ `sessionStorage`) | fresco 30 s; revalida a cada 45 s | criar / mudar status |
+| **Cliente** | TanStack Query | fresco 5 min; sem polling, sem refetch em foco/reconnect | PATCH de status (só queries ativas); POST só escreve a página 1 |
+| **Persistência** | `sessionStorage` | metadados da dashboard | listas `solicitacoes` / `solicitacao` **não** são gravadas (PII) |
 | **API** | `Cache::remember` da página + KPIs | 30 s (lista), 15 s (summary) | `SolicitacaoObserver` sobe a versão da chave |
 
-O dashboard faz *stale-while-revalidate*: mostra o cache na hora e confirma em segundo plano. Se a API falhar no ciclo, a tabela **não some**. Prefetch: as 3 páginas seguintes e a anterior; hover no número também dispara. Depois do POST `201`, o frontend grava o payload confirmado no React Query (página 1) e invalida a query. Não há insert otimista com id local.
+Filtro mais estreito pode ser derivado do cache completo, sem novo GET. Se a API falhar e ainda houver dado, a tabela **não some**.
+
+**Fila que não tapa o cadastro.** GET de lista usa só o `AbortSignal` do React Query — **não cancela o GET da página atual** ao pedir a seguinte. Abrir “Nova solicitação” e o POST abortam listas em voo para o worker ficar livre. Axios **não** manda `Content-Type: application/json` em GET (isso disparava `OPTIONS` por página e dobrava o boot do PHP).
+
+**Datas ISO na API.** `SolicitacaoResource` serializa `created_at` em UTC (`Y-m-d\TH:i:s\Z`). Cache em arquivo não pode devolver `Carbon` incompleto — a lista quebrava em “—” na data a partir da página 4.
 
 **Calendário próprio.** `<input type="date">` nativo estourava o layout, pintava seleção azul e mandava `99/99/9999` para a API (422 disfarçado de “erro de conexão”). O período é `dd/mm/aaaa` por segmento + painel, com validação **antes** do request.
 
-**Docker magro.** A imagem PHP já traz `pdo_pgsql` e OPcache. O entrypoint **só migra** (seed é opt-in). Compose: 4 workers no `artisan serve`, cache em arquivo, sessão em array, fila sync.
+**Docker no Windows sem I/O no `vendor`.** Bind mount de milhares de arquivos PHP no Docker Desktop é o que fazia o `/up` levar ~4 s e cada página da fila 3–8 s. O Compose monta `vlab_vendor` em Linux; o entrypoint roda `composer install` e depois `artisan serve`. Cache/sessão em `array`, 8 workers, log em `stderr`, `LOG_HTTP_ENABLED=false` no Compose (o canal `api` em arquivo continua disponível fora do Docker).
 
 **Superfície pequena e validação no servidor.** O desafio **não pede login**. A defesa do recorte local é API mínima + integridade, não IAM:
 
@@ -121,14 +128,14 @@ O dashboard faz *stale-while-revalidate*: mostra o cache na hora e confirma em s
 |----------|------|
 | Bind | Postgres e API em `127.0.0.1` |
 | CORS | só `http://localhost:5173`; métodos `GET/POST/PATCH/OPTIONS` |
-| Rate limit | 60 req/min por IP |
+| Rate limit | GET 120/min; POST/PATCH 30/min por IP |
 | Headers | `nosniff`, `DENY`, `Referrer-Policy`, `Permissions-Policy` |
 | Erros | JSON sem stack (`APP_DEBUG=false` no Compose) |
 | Create | nome 3–120, só letras; HTML stripped; URGENTE exige justificativa |
 | Lista | enums nos filtros; busca máx. 100; LIKE com escape de `%`/`_` |
 | Status | PATCH só `{ status }`; transições ilegais → 422 |
 | Mass assignment | `status` e `protocolo` **não** são fillable |
-| PII na UI | Cartão SUS mascarado; o app **não inventa** CNS |
+| PII | a API **não** pede Cartão SUS/CNS; nomes da fila **não** vão para `sessionStorage` |
 
 `API_AUTH_ENABLED` existe no backend (Sanctum) mas **vem desligado**. A fila abre direto em http://localhost:5173.
 
@@ -148,7 +155,7 @@ flowchart LR
     San --> File["storage/logs/api-YYYY-MM-DD.log"]
 ```
 
-Cada request em `api/*` recebe um `X-Request-Id` (UUID, ou o valor do cliente se for opaco `A-Za-z0-9_-` de 8–64 caracteres). O mesmo id volta no header da resposta (CORS expõe o header) e entra em todo evento do canal `api`. Healthcheck `/up` não é logado.
+Cada request em `api/*` recebe um `X-Request-Id` (UUID, ou o valor do cliente se for opaco `A-Za-z0-9_-` de 8–64 caracteres). O mesmo id volta no header da resposta (CORS expõe o header) e entra em todo evento do canal `api`. Healthcheck `/up` não é logado. `GET /solicitacoes` 2xx mais rápido que 400 ms também **não** gera `http.response` — senão o disco vira gargalo na fila.
 
 | Evento | Quando | Campos |
 |--------|--------|--------|
@@ -160,11 +167,13 @@ Nível segue o status HTTP — 2xx `info`, 4xx `warning`, 5xx `error`. Validaç�
 
 **Sanitização (LGPD).** `LogContextSanitizer` troca por `[redacted]` chaves com `password`, `senha`, `token`, `authorization`, `cookie`, `cpf`, `email`, `nome_solicitante`, `descricao`, `justificativa`. Strings longas cortam em 512 caracteres. O interceptor Axios, em DEV, loga erro no console **sem query string** (a busca pode ter nome).
 
-Arquivo: `backend/storage/logs/api-YYYY-MM-DD.log`, JSON por linha, retenção 14 dias (`LOG_API_DAYS`). Liga/desliga: `LOG_HTTP_ENABLED`.
+Arquivo (fora do Compose): `backend/storage/logs/api-YYYY-MM-DD.log`, JSON por linha, retenção 14 dias (`LOG_API_DAYS`). No Docker o canal padrão é `stderr` e `LOG_HTTP_ENABLED=false`. Liga/desliga: `LOG_HTTP_ENABLED`.
 
 ```bash
-docker exec vlab_backend sh -c 'tail -n 50 storage/logs/api-$(date +%F).log'
+docker logs vlab_backend --tail 50
 ```
+
+Para gravar o canal `api` em arquivo, suba com `LOG_HTTP_ENABLED=true` e `LOG_CHANNEL=stack`.
 
 ---
 
@@ -177,8 +186,8 @@ docker exec vlab_backend sh -c 'tail -n 50 storage/logs/api-$(date +%F).log'
 | **Dados** | PostgreSQL 15, migrations, factory/seeder, índices na fila |
 | **Fila** | Paginação, busca, categoria, prioridade, status, período |
 | **Logs** | Canal `api` JSON diário, `X-Request-Id`, eventos de domínio, PII redigida |
-| **Qualidade** | PHPUnit (API + transições + cache + logs), Vitest (datas, máscara, cache) |
-| **DevOps** | Docker Compose, healthcheck do Postgres, OPcache |
+| **Qualidade** | PHPUnit em SQLite isolado, Vitest, Playwright (criar → listar → transicionar), CI GitHub Actions |
+| **DevOps** | Docker Compose, volume `vendor`, healthcheck, OPcache, 8 workers |
 
 ---
 
@@ -253,8 +262,8 @@ _**Detalhe** — tema escuro; só os status legais da máquina de estados._
 - KPIs da fila (total, recebidas, em análise, agendadas, críticas)
 - Listagem paginada com protocolo, solicitante, categoria, prioridade, status, data
 - Filtros + período de criação (`created_at`)
-- Criação com protocolo gerado no `creating` do model (`Str::random`)
-- Detalhe e avanço de status
+- Criação com protocolo gerado no `creating` do model (`Str::random`, com retry se colidir)
+- Detalhe, avanço de status e **histórico de transições** no modal
 
 ### Interface
 
@@ -264,7 +273,7 @@ _**Detalhe** — tema escuro; só os status legais da máquina de estados._
 
 ### Fora deste recorte
 
-Autenticação de operador, edição após criar (exceto status), exclusão e histórico de transições. O `/up` do Laravel cobre o healthcheck do Compose.
+Autenticação de operador, edição após criar (exceto status) e exclusão. O `/up` do Laravel cobre o healthcheck do Compose.
 
 ---
 
@@ -274,7 +283,7 @@ Autenticação de operador, edição após criar (exceto status), exclusão e hi
 
 **Backend** — PHP 8.4 · Laravel 13 · PostgreSQL 15
 
-**Infra** — Docker Compose · OPcache · 4 workers PHP CLI
+**Infra** — Docker Compose · OPcache · 8 workers PHP CLI · volume Linux para `vendor`
 
 ---
 
@@ -293,36 +302,41 @@ docker compose up -d
 | Frontend | http://localhost:5173 |
 | API | http://localhost:8000/api/v1 |
 
-O backend espera o Postgres healthy e roda **migrations**. Não há tela de login. Seed (dados de exemplo, opcional):
+O backend espera o Postgres healthy, instala o `vendor` no volume Linux (primeira subida demora o `composer install`) e roda **migrations**. Não há tela de login. Seed (dados de exemplo, opcional):
 
 ```bash
 docker exec vlab_backend php artisan db:seed --force
 ```
 
-Variáveis no `docker-compose.yml` (`VLAB_LIST_CACHE_SECONDS=30`, `VLAB_SUMMARY_CACHE_SECONDS=15`). Modelo: [`backend/.env.example`](backend/.env.example) e [`frontend/.env.example`](frontend/.env.example). Não commitar `.env`.
+Variáveis no `docker-compose.yml`: `VLAB_LIST_CACHE_SECONDS=30`, `VLAB_SUMMARY_CACHE_SECONDS=15`, `PHP_CLI_SERVER_WORKERS=8`, `CACHE_STORE=array`. Modelo: [`backend/.env.example`](backend/.env.example) e [`frontend/.env.example`](frontend/.env.example). Não commitar `.env`.
+
+PHPUnit **não** usa o Postgres do Compose: `tests/TestCase.php` força SQLite `:memory:`, para `artisan test` não apagar a fila local.
 
 ---
 
 ## Estrutura do repositório
 
 ```
+├── .github/workflows/ci.yml  # PHPUnit + Vitest + build Vite + Playwright
 ├── frontend/                 # SPA Vite
+│   ├── e2e/                  # smoke: criar → listar → transicionar
 │   └── src/
 │       ├── api/              # Axios, React Query, cache da lista
 │       ├── components/       # Fila, filtros, modais, layout
-│       ├── hooks/            # Query, prefetch, mutations
-│       └── utils/            # Datas BR, máscara SUS, HTTP status
+│       ├── hooks/            # Query e mutations (sem polling)
+│       └── utils/            # Datas BR, HTTP status
 ├── backend/
 │   ├── app/
 │   │   ├── Enums/
 │   │   ├── Http/             # Controller, Requests, Resources, middleware de log
 │   │   ├── Logging/          # Formatter JSON do canal api
-│   │   ├── Models/ + Observers + Policies
+│   │   ├── Models/           # Solicitacao + SolicitacaoStatusHistorico
+│   │   ├── Observers + Policies
 │   │   ├── Services/         # Query, state machine, ApiLogService
 │   │   └── Support/          # Cache da fila, HTTP status, sanitizer de logs
-│   ├── database/             # migrations, factory, seeder, índices
+│   ├── database/             # migrations (histórico + índices), factory, seeder
 │   ├── docs/openapi.yaml
-│   └── tests/
+│   └── tests/                # SQLite :memory: (não toca o Postgres do Docker)
 ├── docs/
 │   ├── logo-vlab.png
 │   ├── favicon.png
@@ -338,10 +352,12 @@ Variáveis no `docker-compose.yml` (`VLAB_LIST_CACHE_SECONDS=30`, `VLAB_SUMMARY_
 ```bash
 docker exec vlab_backend php artisan test
 cd frontend && npm run test:run
+cd frontend && npx playwright test
 ```
 
-Backend: transições válidas/inválidas, listagem com período, cache da fila sem query repetida, `X-Request-Id`, `http.response` e redaction de PII.  
-Frontend: data BR, máscara SUS, insert no cache, páginas vizinhas (prefetch), persistência do React Query e mensagem por status HTTP.
+Backend: transições válidas/inválidas, histórico de status, colisão de protocolo, listagem com período, cache da fila sem query repetida, `X-Request-Id`, `http.response` e redaction de PII.  
+Frontend: data BR, validação do formulário, tabela/paginação, insert no cache, persistência **sem** PII da lista, GET sem `Content-Type`, mensagem por status HTTP.  
+E2E (Playwright): criar → listar → `RECEBIDA → EM_ANALISE` → conferir o histórico. CI em [`.github/workflows/ci.yml`](.github/workflows/ci.yml) (PHPUnit SQLite + Vitest + `vite build` + smoke Playwright).
 
 ---
 

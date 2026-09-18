@@ -30,8 +30,18 @@ final class ApiLogService
         }
 
         $statusCode = $response->getStatusCode();
-        $category = HttpStatus::category($statusCode);
         $durationMs = (hrtime(true) - $startedAtHrtime) / 1_000_000;
+
+        if (
+            $request->isMethod('GET')
+            && $statusCode < 400
+            && $durationMs < 400
+            && $request->routeIs('solicitacoes.index')
+        ) {
+            return;
+        }
+
+        $category = HttpStatus::category($statusCode);
 
         $this->write(
             HttpStatus::logLevel($statusCode),

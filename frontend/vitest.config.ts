@@ -7,9 +7,16 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
+    exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
     coverage: {
       provider: 'v8',
-      include: ['src/utils/httpStatus.ts'],
+      include: [
+        'src/utils/httpStatus.ts',
+        'src/components/CreateSolicitacaoModal.tsx',
+        'src/components/SolicitacaoDetailModal.tsx',
+        'src/components/Table.tsx',
+        'src/components/Pagination.tsx',
+      ],
       thresholds: {
         lines: 80,
         branches: 75,

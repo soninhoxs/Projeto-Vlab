@@ -8,6 +8,7 @@ import { Table } from './components/Table';
 import { Pagination } from './components/Pagination';
 import { CreateSolicitacaoModal } from './components/CreateSolicitacaoModal';
 import { SolicitacaoDetailModal } from './components/SolicitacaoDetailModal';
+import { abortActiveListFetch } from './api/solicitacoes';
 import { useSolicitacoes } from './hooks/useSolicitacoes';
 import type { Solicitacao } from './types';
 
@@ -22,7 +23,6 @@ function App() {
     currentData, 
     paginationData, 
     setCurrentPage,
-    prefetchPage,
     kpis,
     isLoading,
     isListRefreshing,
@@ -58,7 +58,10 @@ function App() {
           <FilterBar 
             filtros={filtros} 
             setFiltros={setFiltros} 
-            onCreateClick={() => setIsCreateModalOpen(true)}
+            onCreateClick={() => {
+              abortActiveListFetch();
+              setIsCreateModalOpen(true);
+            }}
             isSearchPending={isSearchPending}
           />
 
@@ -86,7 +89,6 @@ function App() {
           <Pagination 
             pagination={paginationData}
             onPageChange={setCurrentPage}
-            onPrefetchPage={prefetchPage}
             isFetching={isListRefreshing}
           />
       </main>

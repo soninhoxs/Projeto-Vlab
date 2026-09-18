@@ -46,4 +46,19 @@ class StatusTransitionServiceTest extends TestCase
         $this->assertTrue($result);
         $this->assertEquals(StatusEnum::CANCELADA, $solicitacao->fresh()->status);
     }
+
+    public function test_it_does_not_record_history_on_invalid_transition(): void
+    {
+        $solicitacao = Solicitacao::factory()->create(['status' => StatusEnum::RECEBIDA]);
+        $before = $solicitacao->statusHistorico()->count();
+        $service = new StatusTransitionService;
+
+        try {
+            $service->transition($solicitacao, StatusEnum::AGENDADA);
+            $this->fail('Expected ValidationException');
+        } catch (ValidationException) {
+            $this->assertSame($before, $solicitacao->statusHistorico()->count());
+            $this->assertEquals(StatusEnum::RECEBIDA, $solicitacao->fresh()->status);
+        }
+    }
 }

@@ -215,6 +215,102 @@ class SolicitacaoApiTest extends TestCase
         $this->assertEquals(10, strlen($protocolo));
     }
 
+    public function test_protocolo_retries_when_generated_value_already_exists(): void
+    {
+        Solicitacao::factory()->create(['protocolo' => 'AAAAAAAAAA']);
+
+        $calls = 0;
+        \Illuminate\Support\Str::createRandomStringsUsing(function () use (&$calls) {
+            $calls++;
+
+            return $calls === 1 ? 'aaaaaaaaaa' : 'bbbbbbbbbb';
+        });
+
+        try {
+            $created = Solicitacao::create([
+                'nome_solicitante' => 'Ana Lima',
+                'categoria' => CategoriaEnum::CONSULTA,
+                'prioridade' => PrioridadeEnum::BAIXA,
+            ]);
+        } finally {
+            \Illuminate\Support\Str::createRandomStringsNormally();
+        }
+
+        $this->assertSame('BBBBBBBBBB', $created->protocolo);
+        $this->assertGreaterThanOrEqual(2, $calls);
+    }
+
+    public function test_create_records_initial_status_history(): void
+    {
+        $response = $this->postJson('/api/v1/solicitacoes', [
+            'nome_solicitante' => 'João da Silva',
+            'categoria' => 'CONSULTA',
+            'prioridade' => 'BAIXA',
+        ]);
+
+        $response->assertCreated();
+        $id = $response->json('data.id');
+
+        $this->assertDatabaseHas('solicitacao_status_historico', [
+            'solicitacao_id' => $id,
+            'from_status' => null,
+            'to_status' => 'RECEBIDA',
+        ]);
+        $this->assertSame(1, \App\Models\SolicitacaoStatusHistorico::query()->where('solicitacao_id', $id)->count());
+    }
+
+    public function test_valid_transition_appends_history(): void
+    {
+        $solicitacao = Solicitacao::factory()->create(['status' => StatusEnum::RECEBIDA]);
+
+        $this->patchJson("/api/v1/solicitacoes/{$solicitacao->id}/status", [
+            'status' => 'EM_ANALISE',
+        ])->assertOk();
+
+        $this->assertDatabaseHas('solicitacao_status_historico', [
+            'solicitacao_id' => $solicitacao->id,
+            'from_status' => 'RECEBIDA',
+            'to_status' => 'EM_ANALISE',
+        ]);
+        $this->assertSame(2, \App\Models\SolicitacaoStatusHistorico::query()->where('solicitacao_id', $solicitacao->id)->count());
+    }
+
+    public function test_invalid_transition_does_not_write_history(): void
+    {
+        $solicitacao = Solicitacao::factory()->create(['status' => StatusEnum::RECEBIDA]);
+        $before = \App\Models\SolicitacaoStatusHistorico::query()->where('solicitacao_id', $solicitacao->id)->count();
+
+        $this->patchJson("/api/v1/solicitacoes/{$solicitacao->id}/status", [
+            'status' => 'AGENDADA',
+        ])->assertStatus(422);
+
+        $this->assertSame(
+            $before,
+            \App\Models\SolicitacaoStatusHistorico::query()->where('solicitacao_id', $solicitacao->id)->count(),
+        );
+        $this->assertDatabaseHas('solicitacoes', [
+            'id' => $solicitacao->id,
+            'status' => 'RECEBIDA',
+        ]);
+    }
+
+    public function test_show_returns_history_in_order(): void
+    {
+        $solicitacao = Solicitacao::factory()->create(['status' => StatusEnum::RECEBIDA]);
+
+        $this->patchJson("/api/v1/solicitacoes/{$solicitacao->id}/status", [
+            'status' => 'EM_ANALISE',
+        ])->assertOk();
+
+        $response = $this->getJson("/api/v1/solicitacoes/{$solicitacao->id}");
+
+        $response->assertOk()
+            ->assertJsonPath('historico_status.0.from_status', null)
+            ->assertJsonPath('historico_status.0.to_status', 'RECEBIDA')
+            ->assertJsonPath('historico_status.1.from_status', 'RECEBIDA')
+            ->assertJsonPath('historico_status.1.to_status', 'EM_ANALISE');
+    }
+
     // ==================== SHOW ====================
 
     public function test_can_show_solicitacao()
@@ -421,8 +517,33 @@ class SolicitacaoApiTest extends TestCase
 
         $second = $this->getJson('/api/v1/solicitacoes')->assertOk();
 
-        $this->assertStringContainsString('max-age=30', (string) $second->headers->get('Cache-Control'));
+        $this->assertStringContainsString('no-cache', (string) $second->headers->get('Cache-Control'));
         $this->assertSame([], DB::getQueryLog());
+        $this->assertIsString($second->json('data.0.created_at'));
+        $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}T/', (string) $second->json('data.0.created_at'));
+    }
+
+    public function test_later_index_pages_keep_full_page_size_and_iso_dates_through_cache(): void
+    {
+        Solicitacao::factory()->count(30)->create();
+
+        $page4 = $this->getJson('/api/v1/solicitacoes?page=4')->assertOk();
+
+        $this->assertCount(7, $page4->json('data'));
+        $this->assertSame(30, $page4->json('total'));
+        $this->assertSame(5, $page4->json('last_page'));
+        $this->assertIsString($page4->json('data.0.created_at'));
+        $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}T/', (string) $page4->json('data.0.created_at'));
+
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+
+        $cached = $this->getJson('/api/v1/solicitacoes?page=4')->assertOk();
+
+        $this->assertSame([], DB::getQueryLog());
+        $this->assertCount(7, $cached->json('data'));
+        $this->assertIsString($cached->json('data.0.created_at'));
+        $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}T/', (string) $cached->json('data.0.created_at'));
     }
 
     public function test_index_cache_is_invalidated_after_create(): void

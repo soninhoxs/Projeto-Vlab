@@ -253,6 +253,31 @@ export const SolicitacaoDetailModal: React.FC<SolicitacaoDetailModalProps> = ({
                 </div>
               )}
 
+              {solicitacao.historico_status && solicitacao.historico_status.length > 0 && (
+                <div className="detail-section" aria-label="Histórico de status">
+                  <h3 className="detail-section__title">Histórico</h3>
+                  <ol className="status-history">
+                    {solicitacao.historico_status.map((event, index) => {
+                      const toLabel = STATUS_LABELS[event.to_status] || event.to_status;
+                      const fromLabel = event.from_status
+                        ? STATUS_LABELS[event.from_status] || event.from_status
+                        : null;
+
+                      return (
+                        <li key={`${event.to_status}-${event.created_at}-${index}`} className="status-history__item">
+                          <span className="status-history__transition">
+                            {fromLabel ? `${fromLabel} → ${toLabel}` : toLabel}
+                          </span>
+                          <time className="status-history__date" dateTime={event.created_at}>
+                            {formatDate(event.created_at)}
+                          </time>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </div>
+              )}
+
               {/* Status Section */}
               <div className="status-section">
                 <h3 className="status-section__title">Status Atual</h3>

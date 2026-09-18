@@ -139,6 +139,7 @@
 
 /* ─── Corpo ─── */
 .table tbody tr {
+  height: 4.5rem;
   border-bottom: 1px solid var(--color-neutral-100);
   transition: background-color var(--transition-fast);
 }
@@ -193,6 +194,14 @@
   white-space: nowrap;
   font-size: var(--font-size-sm);
   color: var(--color-neutral-500);
+}
+
+.table__date time {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 2.5em;
+  line-height: 1.25;
 }
 
 /* ─── Ação da Tabela ─── */
@@ -370,6 +379,7 @@
   .table tbody tr {
     display: flex;
     flex-direction: column;
+    height: auto;
     gap: var(--space-2);
     padding: var(--space-4);
     border-bottom: 1px solid var(--color-neutral-200);

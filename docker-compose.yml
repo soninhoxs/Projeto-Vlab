@@ -26,6 +26,7 @@ services:
     working_dir: /var/www/html
     volumes:
       - ./backend:/var/www/html
+      - vlab_vendor:/var/www/html/vendor
     environment:
       - APP_ENV=local
       - APP_DEBUG=false
@@ -39,21 +40,25 @@ services:
       - API_AUTH_ENABLED=false
       - VLAB_SUMMARY_CACHE_SECONDS=15
       - VLAB_LIST_CACHE_SECONDS=30
-      - CACHE_STORE=file
+      - CACHE_STORE=array
       - SESSION_DRIVER=array
       - QUEUE_CONNECTION=sync
-      - PHP_CLI_SERVER_WORKERS=4
+      - PHP_CLI_SERVER_WORKERS=8
+      - LOG_CHANNEL=stderr
+      - LOG_STACK=stderr
+      - LOG_LEVEL=warning
+      - LOG_HTTP_ENABLED=false
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://127.0.0.1:8000/up') === false ? 1 : 0);"]
+      test: ["CMD", "php", "-r", "exit(@fsockopen('127.0.0.1', 8000) === false ? 1 : 0);"]
       interval: 15s
       timeout: 5s
-      retries: 5
-      start_period: 20s
+      retries: 8
+      start_period: 90s
 
   frontend:
     image: node:20-alpine
@@ -74,3 +79,4 @@ services:
 
 volumes:
   vlab_pgdata:
+  vlab_vendor:

@@ -17,6 +17,7 @@ use App\Support\Cache\SolicitacaoSummaryCache;
 use App\Services\StatusTransitionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 class SolicitacaoController extends Controller
 {
@@ -41,7 +42,7 @@ class SolicitacaoController extends Controller
         );
 
         return response()->json($payload)
-            ->header('Cache-Control', 'private, max-age='.$ttl);
+            ->header('Cache-Control', 'private, no-cache, must-revalidate');
     }
 
     /**
@@ -65,34 +66,29 @@ class SolicitacaoController extends Controller
             ])
             ->orderByDesc('created_at')
             ->orderByDesc('id')
-            ->paginate(7, ['*'], 'page', $page)
-            ->appends($request->safe()->only([
-                'status',
-                'categoria',
-                'prioridade',
-                'busca',
-                'data_inicio',
-                'data_fim',
-            ]));
+            ->paginate(7, ['*'], 'page', $page);
 
-        $payload = $paginated->toArray();
-        $payload['data'] = SolicitacaoResource::collection($paginated->getCollection())->resolve($request);
-        $payload['summary'] = $summary;
-
-        return $payload;
+        return [
+            'data' => SolicitacaoResource::collection($paginated->getCollection())->resolve($request),
+            'current_page' => $paginated->currentPage(),
+            'last_page' => $paginated->lastPage(),
+            'total' => $paginated->total(),
+            'per_page' => $paginated->perPage(),
+            'summary' => $summary,
+        ];
     }
 
     public function store(StoreSolicitacaoRequest $request): JsonResponse
     {
         $this->authorize('create', Solicitacao::class);
 
-        $solicitacao = Solicitacao::create($request->safe()->only([
+        $solicitacao = DB::transaction(fn () => Solicitacao::create($request->safe()->only([
             'nome_solicitante',
             'categoria',
             'prioridade',
             'descricao',
             'justificativa_prioridade',
-        ]));
+        ])));
 
         $this->apiLogService->logDomainEvent($request, 'solicitacao.created', [
             'solicitacao_id' => $solicitacao->id,
@@ -111,6 +107,8 @@ class SolicitacaoController extends Controller
     public function show(Solicitacao $solicitacao): SolicitacaoResource
     {
         $this->authorize('view', $solicitacao);
+
+        $solicitacao->load(['statusHistorico' => fn ($query) => $query->orderBy('id')]);
 
         return SolicitacaoResource::make($solicitacao);
     }

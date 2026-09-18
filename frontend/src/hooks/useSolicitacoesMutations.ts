@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AxiosError } from 'axios';
-import { api } from '../api/client';
-import { writeCreatedSolicitacaoToCache } from '../api/solicitacoes';
+import { api, resolveApiErrorMessage } from '../api/client';
+import { abortActiveListFetch, writeCreatedSolicitacaoToCache } from '../api/solicitacoes';
 import type { Solicitacao } from '../types';
 
 // Tipos para criação de solicitação
@@ -55,7 +55,13 @@ export const useSolicitacoesMutations = () => {
   // Mutation para criar solicitação
   const createMutation = useMutation<CreateResponse, AxiosError<ApiErrorResponse>, CreateSolicitacaoData>({
     mutationFn: async (data) => {
-          const response = await api.post<CreateResponse>('/solicitacoes', data);
+      abortActiveListFetch();
+      await queryClient.cancelQueries({
+        queryKey: ['solicitacoes'],
+        fetchStatus: 'fetching',
+      });
+
+      const response = await api.post<CreateResponse>('/solicitacoes', data);
       return response.data;
     },
     onSuccess: (response) => {
@@ -63,30 +69,29 @@ export const useSolicitacoesMutations = () => {
         queryClient,
         response.data as unknown as Record<string, unknown>,
       );
-      void queryClient.invalidateQueries({ queryKey: ['solicitacoes'] });
     },
   });
 
   // Mutation para atualizar status
   const updateStatusMutation = useMutation<CreateResponse, AxiosError<ApiErrorResponse>, UpdateStatusData>({
     mutationFn: async ({ id, status }) => {
-          const response = await api.patch<CreateResponse>(`/solicitacoes/${id}/status`, { status });
+      abortActiveListFetch();
+      const response = await api.patch<CreateResponse>(`/solicitacoes/${id}/status`, { status });
       return response.data;
     },
     onSuccess: () => {
-      // Invalida a lista e o detalhe para recarregar
-      queryClient.invalidateQueries({ queryKey: ['solicitacoes'] });
-      queryClient.invalidateQueries({ queryKey: ['solicitacao'] });
+      void queryClient.invalidateQueries({ queryKey: ['solicitacoes'], refetchType: 'active' });
+      void queryClient.invalidateQueries({ queryKey: ['solicitacao'], refetchType: 'active' });
     },
   });
 
   // Helper para extrair mensagem de erro da API
-  const getErrorMessage = (error: AxiosError<ApiErrorResponse>): string => {
-    if (error.response?.data?.errors) {
-      const firstError = Object.values(error.response.data.errors)[0];
-      return Array.isArray(firstError) ? firstError[0] : String(firstError);
+  const getErrorMessage = (error: AxiosError<ApiErrorResponse> | Error | null): string => {
+    if (!error) {
+      return 'Erro ao processar requisição. Tente novamente.';
     }
-    return error.response?.data?.message || 'Erro ao processar requisição. Tente novamente.';
+
+    return resolveApiErrorMessage(error);
   };
 
   // Helper para verificar se uma transição é permitida

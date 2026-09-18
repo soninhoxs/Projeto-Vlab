@@ -1,3 +1,40 @@
+export function parseApiDate(value: unknown): Date | null {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.includes('T') ? value : value.replace(' ', 'T');
+    const withMs = normalized.replace(/(\.\d{3})\d+/, '$1');
+    const date = new Date(withMs);
+    if (!Number.isNaN(date.getTime())) {
+      return date;
+    }
+
+    const utcGuess = new Date(`${withMs}Z`);
+    return Number.isNaN(utcGuess.getTime()) ? null : utcGuess;
+  }
+
+  if (value && typeof value === 'object' && 'date' in value) {
+    const raw = (value as { date?: unknown; timezone?: unknown }).date;
+    const timezone = (value as { timezone?: unknown }).timezone;
+    if (typeof raw !== 'string') {
+      return null;
+    }
+
+    const iso = raw.includes('T') ? raw : raw.replace(' ', 'T');
+    const zoned = /Z$|[+-]\d{2}:?\d{2}$/.test(iso)
+      ? iso
+      : timezone === 'UTC'
+        ? `${iso}Z`
+        : iso;
+
+    return parseApiDate(zoned);
+  }
+
+  return null;
+}
+
 const BR_DATE_PATTERN = /^(\d{2})\/(\d{2})\/(\d{4})$/;
 const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 

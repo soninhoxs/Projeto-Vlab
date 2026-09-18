@@ -1,10 +1,9 @@
 import { QueryClient, dehydrate, hydrate } from '@tanstack/react-query';
 
-export const QUERY_STALE_TIME_MS = 30_000;
-export const QUERY_REVALIDATE_INTERVAL_MS = 45_000;
+export const QUERY_STALE_TIME_MS = 5 * 60_000;
 export const QUERY_GC_TIME_MS = 10 * 60_000;
 export const QUERY_PERSIST_KEY = 'vlab-query-cache';
-export const QUERY_PERSIST_VERSION = 1;
+export const QUERY_PERSIST_VERSION = 4;
 
 type PersistedQueryCache = {
   v: number;
@@ -15,11 +14,12 @@ export function createAppQueryClient(): QueryClient {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
-        refetchOnWindowFocus: true,
-        refetchOnReconnect: true,
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
+        refetchOnMount: false,
         staleTime: QUERY_STALE_TIME_MS,
         gcTime: QUERY_GC_TIME_MS,
-        retry: 2,
+        retry: 0,
       },
     },
   });
@@ -73,7 +73,14 @@ export function persistQueryCache(
         const payload: PersistedQueryCache = {
           v: QUERY_PERSIST_VERSION,
           client: dehydrate(queryClient, {
-            shouldDehydrateQuery: (query) => query.state.status === 'success',
+            shouldDehydrateQuery: (query) => {
+              const root = query.queryKey[0];
+              if (root === 'solicitacoes' || root === 'solicitacao') {
+                return false;
+              }
+
+              return query.state.status === 'success';
+            },
           }),
         };
         storage.setItem(QUERY_PERSIST_KEY, JSON.stringify(payload));

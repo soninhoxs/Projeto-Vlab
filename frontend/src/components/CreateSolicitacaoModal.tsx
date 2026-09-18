@@ -16,6 +16,10 @@ const INITIAL_FORM_STATE: CreateSolicitacaoData = {
   justificativa_prioridade: '',
 };
 
+const NOME_SOLICITANTE_PATTERN = /^[\p{L}\p{M}\s.'-]+$/u;
+const NOME_SOLICITANTE_MIN = 3;
+const NOME_SOLICITANTE_MAX = 120;
+
 interface FormErrors {
   nome_solicitante?: string;
   categoria?: string;
@@ -73,10 +77,16 @@ export const CreateSolicitacaoModal: React.FC<CreateSolicitacaoModalProps> = ({ 
   const validate = (): boolean => {
     const newErrors: FormErrors = {};
 
-    if (!formData.nome_solicitante.trim()) {
+    const trimmedName = formData.nome_solicitante.trim();
+
+    if (!trimmedName) {
       newErrors.nome_solicitante = 'Nome do solicitante é obrigatório';
-    } else if (formData.nome_solicitante.length > 255) {
-      newErrors.nome_solicitante = 'Nome deve ter no máximo 255 caracteres';
+    } else if (trimmedName.length < NOME_SOLICITANTE_MIN) {
+      newErrors.nome_solicitante = 'Nome deve ter no mínimo 3 caracteres';
+    } else if (trimmedName.length > NOME_SOLICITANTE_MAX) {
+      newErrors.nome_solicitante = 'Nome deve ter no máximo 120 caracteres';
+    } else if (!NOME_SOLICITANTE_PATTERN.test(trimmedName)) {
+      newErrors.nome_solicitante = 'O nome deve conter apenas letras e caracteres comuns de nome.';
     }
 
     if (!formData.categoria) {
@@ -189,9 +199,11 @@ export const CreateSolicitacaoModal: React.FC<CreateSolicitacaoModalProps> = ({ 
                 autoComplete="name"
                 disabled={isCreating}
                 autoFocus
+                aria-invalid={Boolean(errors.nome_solicitante)}
+                aria-describedby={errors.nome_solicitante ? 'nome_solicitante-error' : undefined}
               />
               {errors.nome_solicitante && (
-                <span className="form__error">{errors.nome_solicitante}</span>
+                <span id="nome_solicitante-error" className="form__error">{errors.nome_solicitante}</span>
               )}
             </div>
 

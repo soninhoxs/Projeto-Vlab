@@ -12,18 +12,23 @@ import './styles/table.css';
 import './styles/filters.css';
 import './styles/theme-toggle.css';
 
-const queryClient = createAppQueryClient();
-
 const rootElement = document.getElementById('root');
 
 if (!rootElement) {
   throw new Error('Elemento #root não encontrado.');
 }
 
-createRoot(rootElement).render(
-  <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
-  </StrictMode>,
-);
+try {
+  const queryClient = createAppQueryClient();
+
+  createRoot(rootElement).render(
+    <StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>
+    </StrictMode>,
+  );
+} catch (error) {
+  const message = error instanceof Error ? error.message : 'Falha ao iniciar o V-Lab.';
+  rootElement.innerHTML = `<p style="padding:24px;font-family:sans-serif">${message}</p>`;
+}

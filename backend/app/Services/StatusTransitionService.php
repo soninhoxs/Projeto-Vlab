@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\StatusEnum;
 use App\Models\Solicitacao;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class StatusTransitionService
@@ -36,23 +37,41 @@ class StatusTransitionService
      */
     public function transition(Solicitacao $solicitacao, StatusEnum $newStatus): bool
     {
-        $currentStatus = $solicitacao->status->value;
-        $nextStatus = $newStatus->value;
+        return DB::transaction(function () use ($solicitacao, $newStatus): bool {
+            /** @var Solicitacao $locked */
+            $locked = Solicitacao::query()
+                ->whereKey($solicitacao->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        if ($currentStatus === $nextStatus) {
-            return true; // No change needed
-        }
+            $currentStatus = $locked->status->value;
+            $nextStatus = $newStatus->value;
 
-        $allowed = self::ALLOWED_TRANSITIONS[$currentStatus] ?? [];
+            if ($currentStatus === $nextStatus) {
+                $solicitacao->refresh();
 
-        if (! in_array($nextStatus, $allowed, true)) {
-            throw ValidationException::withMessages([
-                'status' => ["Transição de status inválida. Não é possível alterar de {$currentStatus} para {$nextStatus}."],
+                return true;
+            }
+
+            $allowed = self::ALLOWED_TRANSITIONS[$currentStatus] ?? [];
+
+            if (! in_array($nextStatus, $allowed, true)) {
+                throw ValidationException::withMessages([
+                    'status' => ["Transição de status inválida. Não é possível alterar de {$currentStatus} para {$nextStatus}."],
+                ]);
+            }
+
+            $locked->status = $newStatus;
+            $locked->save();
+
+            $locked->statusHistorico()->create([
+                'from_status' => $currentStatus,
+                'to_status' => $nextStatus,
             ]);
-        }
 
-        $solicitacao->status = $newStatus;
+            $solicitacao->refresh();
 
-        return $solicitacao->save();
+            return true;
+        });
     }
 }

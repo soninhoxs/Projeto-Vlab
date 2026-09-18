@@ -3,7 +3,15 @@ import { api, sanitizeSearch } from './client';
 import type { Filtros } from '../types';
 
 export const ITEMS_PER_PAGE = 7;
-export const PREFETCH_AHEAD_PAGES = 3;
+
+const activeListControllers = new Set<AbortController>();
+
+export function abortActiveListFetch(): void {
+  for (const controller of activeListControllers) {
+    controller.abort();
+  }
+  activeListControllers.clear();
+}
 
 export interface SolicitacoesSummary {
   total: number;
@@ -43,10 +51,27 @@ export function buildSolicitacoesParams(filtros: AppliedFiltros, page: number): 
 export async function fetchSolicitacoes(
   filtros: AppliedFiltros,
   page: number,
+  signal?: AbortSignal,
 ): Promise<SolicitacoesApiResponse> {
-  const params = buildSolicitacoesParams(filtros, page);
-  const response = await api.get<SolicitacoesApiResponse>('/solicitacoes', { params });
-  return response.data;
+  const controller = new AbortController();
+  activeListControllers.add(controller);
+
+  if (signal?.aborted) {
+    controller.abort();
+  } else {
+    signal?.addEventListener('abort', () => controller.abort(), { once: true });
+  }
+
+  try {
+    const params = buildSolicitacoesParams(filtros, page);
+    const response = await api.get<SolicitacoesApiResponse>('/solicitacoes', {
+      params,
+      signal: controller.signal,
+    });
+    return response.data;
+  } finally {
+    activeListControllers.delete(controller);
+  }
 }
 
 export function getSolicitacoesQueryKey(filtros: AppliedFiltros, page: number) {
@@ -56,7 +81,7 @@ export function getSolicitacoesQueryKey(filtros: AppliedFiltros, page: number) {
 export function getNeighborPages(
   currentPage: number,
   totalPages: number,
-  ahead = PREFETCH_AHEAD_PAGES,
+  ahead = 1,
 ): number[] {
   if (currentPage < 1 || totalPages < 2 || ahead < 1) {
     return [];
@@ -77,6 +102,132 @@ export function getNeighborPages(
   }
 
   return pages;
+}
+
+export function canAnswerFromCachedFiltros(
+  cached: AppliedFiltros,
+  target: AppliedFiltros,
+): boolean {
+  if (filtrosCacheKey(cached) === filtrosCacheKey(target)) return false;
+  if (cached.categoria !== 'todas' && cached.categoria !== target.categoria) return false;
+  if (cached.prioridade !== 'todas' && cached.prioridade !== target.prioridade) return false;
+  if (cached.status !== 'todos' && cached.status !== target.status) return false;
+
+  const cachedBusca = sanitizeSearch(cached.busca).toLowerCase();
+  const targetBusca = sanitizeSearch(target.busca).toLowerCase();
+  if (cachedBusca && !targetBusca.includes(cachedBusca)) return false;
+
+  if (cached.dataInicio && (!target.dataInicio || target.dataInicio < cached.dataInicio)) return false;
+  if (cached.dataFim && (!target.dataFim || target.dataFim > cached.dataFim)) return false;
+
+  return true;
+}
+
+function filtrosCacheKey(filtros: AppliedFiltros): string {
+  return JSON.stringify({
+    categoria: filtros.categoria,
+    prioridade: filtros.prioridade,
+    status: filtros.status,
+    busca: sanitizeSearch(filtros.busca),
+    dataInicio: filtros.dataInicio,
+    dataFim: filtros.dataFim,
+  });
+}
+
+function buildSummaryFromItems(items: Record<string, unknown>[]): SolicitacoesSummary {
+  return {
+    total: items.length,
+    recebidas: items.filter((item) => item.status === 'RECEBIDA').length,
+    em_analise: items.filter((item) => item.status === 'EM_ANALISE' || item.status === 'EM ANÁLISE').length,
+    agendadas: items.filter((item) => item.status === 'AGENDADA').length,
+    urgentes: items.filter((item) => item.prioridade === 'URGENTE').length,
+  };
+}
+
+function collectCompleteCachedRows(
+  queryClient: QueryClient,
+  cachedFiltros: AppliedFiltros,
+): Record<string, unknown>[] | undefined {
+  const pages = new Map<number, SolicitacoesApiResponse>();
+
+  for (const [queryKey, current] of queryClient.getQueriesData<SolicitacoesApiResponse>({
+    queryKey: ['solicitacoes'],
+  })) {
+    if (!current || !Array.isArray(queryKey)) continue;
+    const filtros = queryKey[1] as AppliedFiltros | undefined;
+    const page = queryKey[2];
+    if (!filtros || typeof page !== 'number') continue;
+    if (filtrosCacheKey(filtros) !== filtrosCacheKey(cachedFiltros)) continue;
+    pages.set(page, current);
+  }
+
+  const firstPage = pages.get(1);
+  if (!firstPage) return undefined;
+
+  const lastPage = Math.max(1, firstPage.last_page || 1);
+  const rows: Record<string, unknown>[] = [];
+
+  for (let page = 1; page <= lastPage; page += 1) {
+    const cachedPage = pages.get(page);
+    if (!cachedPage) return undefined;
+    rows.push(...cachedPage.data);
+  }
+
+  if (firstPage.total > 0 && rows.length === 0) return undefined;
+
+  return rows;
+}
+
+export function paginateDerivedSolicitacoes(
+  items: Record<string, unknown>[],
+  page: number,
+): SolicitacoesApiResponse {
+  const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+  const total = items.length;
+  const lastPage = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE) || 1);
+  const currentPage = Math.min(safePage, lastPage);
+  const start = (currentPage - 1) * ITEMS_PER_PAGE;
+
+  return {
+    data: items.slice(start, start + ITEMS_PER_PAGE),
+    current_page: currentPage,
+    last_page: lastPage,
+    total,
+    per_page: ITEMS_PER_PAGE,
+    summary: buildSummaryFromItems(items),
+  };
+}
+
+export function deriveSolicitacoesFromCache(
+  queryClient: QueryClient,
+  target: AppliedFiltros,
+  page: number,
+): SolicitacoesApiResponse | undefined {
+  const seen = new Set<string>();
+  let bestRows: Record<string, unknown>[] | undefined;
+
+  for (const [queryKey, current] of queryClient.getQueriesData<SolicitacoesApiResponse>({
+    queryKey: ['solicitacoes'],
+  })) {
+    if (!current || !Array.isArray(queryKey)) continue;
+    const cachedFiltros = queryKey[1] as AppliedFiltros | undefined;
+    if (!cachedFiltros || !canAnswerFromCachedFiltros(cachedFiltros, target)) continue;
+
+    const groupKey = filtrosCacheKey(cachedFiltros);
+    if (seen.has(groupKey)) continue;
+    seen.add(groupKey);
+
+    const rows = collectCompleteCachedRows(queryClient, cachedFiltros);
+    if (!rows) continue;
+    if (!bestRows || rows.length > bestRows.length) {
+      bestRows = rows;
+    }
+  }
+
+  if (!bestRows) return undefined;
+
+  const filtered = bestRows.filter((item) => matchesListFilters(item, target));
+  return paginateDerivedSolicitacoes(filtered, page);
 }
 
 export function matchesListFilters(item: Record<string, unknown>, filtros: AppliedFiltros): boolean {

@@ -16,7 +16,7 @@ describe('queryClient persist', () => {
 
   it('restores successful queries from sessionStorage', async () => {
     const source = new QueryClient();
-    source.setQueryData(['solicitacoes', 'page', 1], { total: 30, data: [{ id: 1 }] });
+    source.setQueryData(['dashboard-meta'], { total: 30 });
 
     const memory = new Map<string, string>();
     const storage = {
@@ -31,7 +31,7 @@ describe('queryClient persist', () => {
 
     vi.useFakeTimers();
     persistQueryCache(source, storage);
-    source.setQueryData(['solicitacoes', 'page', 1], { total: 30, data: [{ id: 1 }] });
+    source.setQueryData(['dashboard-meta'], { total: 30 });
     await vi.advanceTimersByTimeAsync(300);
 
     expect(memory.get(QUERY_PERSIST_KEY)).toContain('"v":' + QUERY_PERSIST_VERSION);
@@ -39,10 +39,34 @@ describe('queryClient persist', () => {
     const restored = new QueryClient();
     restoreQueryCache(restored, storage);
 
-    expect(restored.getQueryData(['solicitacoes', 'page', 1])).toEqual({
-      total: 30,
-      data: [{ id: 1 }],
+    expect(restored.getQueryData(['dashboard-meta'])).toEqual({ total: 30 });
+  });
+
+  it('does not persist solicitacoes lists with personal data', async () => {
+    const source = new QueryClient();
+    const memory = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => memory.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        memory.set(key, value);
+      },
+      removeItem: (key: string) => {
+        memory.delete(key);
+      },
+    };
+
+    vi.useFakeTimers();
+    persistQueryCache(source, storage);
+    source.setQueryData(['solicitacoes', { busca: '' }, 1], {
+      total: 1,
+      data: [{ nome_solicitante: 'Ana Souza' }],
     });
+    await vi.advanceTimersByTimeAsync(300);
+
+    const restored = new QueryClient();
+    restoreQueryCache(restored, storage);
+
+    expect(restored.getQueryData(['solicitacoes', { busca: '' }, 1])).toBeUndefined();
   });
 
   it('ignores a persisted payload with the wrong version', () => {

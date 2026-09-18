@@ -4,6 +4,7 @@ import {
   formatBrDate,
   fromIsoDate,
   maskDateInput,
+  parseApiDate,
   parseBrDate,
   parseDateSegments,
   toIsoDate,
@@ -44,5 +45,23 @@ describe('date utils', () => {
   it('validates iso period', () => {
     expect(validatePeriod('2026-09-20', '2026-09-10').valid).toBe(false);
     expect(validatePeriod('', '').valid).toBe(true);
+  });
+
+  it('parses ISO strings and cached Carbon-like objects', () => {
+    expect(parseApiDate('2026-09-18T17:28:27Z')?.getUTCDate()).toBe(18);
+    expect(
+      parseApiDate({
+        date: '2026-09-18 17:28:27.000000',
+        timezone: 'UTC',
+      })?.getUTCHours(),
+    ).toBe(17);
+    expect(
+      parseApiDate({
+        __PHP_Incomplete_Class_Name: 'Illuminate\\Support\\Carbon',
+        date: '2026-09-18 14:28:27.000000',
+        timezone_type: 3,
+        timezone: 'UTC',
+      })?.getUTCHours(),
+    ).toBe(14);
   });
 });

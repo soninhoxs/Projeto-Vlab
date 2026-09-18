@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
-import { QUERY_REVALIDATE_INTERVAL_MS, isBlockingQueryFailure } from '../api/queryClient';
+import { QUERY_STALE_TIME_MS, isBlockingQueryFailure } from '../api/queryClient';
 import type { Solicitacao } from '../types';
 
 interface UseSolicitacaoOptions {
@@ -17,9 +17,11 @@ export const useSolicitacao = ({ id, enabled = true }: UseSolicitacaoOptions) =>
       return response.data;
     },
     enabled: enabled && id !== null,
-    refetchInterval: enabled && id !== null ? QUERY_REVALIDATE_INTERVAL_MS : false,
-    refetchIntervalInBackground: false,
-    retry: 2,
+    staleTime: QUERY_STALE_TIME_MS,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: 0,
   });
 
   return {

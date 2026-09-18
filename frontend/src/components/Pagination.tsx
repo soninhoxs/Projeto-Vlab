@@ -30,12 +30,17 @@ export const Pagination: React.FC<PaginationProps> = ({
 
       <nav className="pagination__controls" aria-label="Navegação de páginas">
         <button
+          type="button"
           className="pagination__btn"
           aria-label="Página anterior"
           disabled={currentPage === 1}
           onClick={() => onPageChange(currentPage - 1)}
-          onMouseEnter={() => onPrefetchPage?.(currentPage - 1)}
-          onFocus={() => onPrefetchPage?.(currentPage - 1)}
+          onMouseEnter={() => {
+            if (currentPage > 1) onPrefetchPage?.(currentPage - 1);
+          }}
+          onFocus={() => {
+            if (currentPage > 1) onPrefetchPage?.(currentPage - 1);
+          }}
         >
           <ChevronLeft size={20} aria-hidden="true" />
         </button>
@@ -53,12 +58,17 @@ export const Pagination: React.FC<PaginationProps> = ({
             return (
               <li key={page}>
                 <button
+                  type="button"
                   className={`pagination__page ${currentPage === page ? 'pagination__page--active' : ''}`}
                   aria-label={currentPage === page ? `Página ${page} atual` : `Ir para página ${page}`}
                   aria-current={currentPage === page ? 'page' : undefined}
                   onClick={() => onPageChange(page)}
-                  onMouseEnter={() => onPrefetchPage?.(page)}
-                  onFocus={() => onPrefetchPage?.(page)}
+                  onMouseEnter={() => {
+                    if (page !== currentPage) onPrefetchPage?.(page);
+                  }}
+                  onFocus={() => {
+                    if (page !== currentPage) onPrefetchPage?.(page);
+                  }}
                 >
                   {page}
                 </button>
@@ -68,12 +78,17 @@ export const Pagination: React.FC<PaginationProps> = ({
         </ul>
 
         <button
+          type="button"
           className="pagination__btn"
           aria-label="Próxima página"
           disabled={currentPage === totalPages}
           onClick={() => onPageChange(currentPage + 1)}
-          onMouseEnter={() => onPrefetchPage?.(currentPage + 1)}
-          onFocus={() => onPrefetchPage?.(currentPage + 1)}
+          onMouseEnter={() => {
+            if (currentPage < totalPages) onPrefetchPage?.(currentPage + 1);
+          }}
+          onFocus={() => {
+            if (currentPage < totalPages) onPrefetchPage?.(currentPage + 1);
+          }}
         >
           <ChevronRight size={20} aria-hidden="true" />
         </button>

@@ -1,6 +1,8 @@
 FROM php:8.4-cli-alpine
 
-RUN apk add --no-cache libpq \
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
+RUN apk add --no-cache libpq git unzip \
     && apk add --no-cache --virtual .build-deps $PHPIZE_DEPS postgresql-dev \
     && docker-php-ext-install -j"$(nproc)" pdo_pgsql opcache \
     && apk del .build-deps

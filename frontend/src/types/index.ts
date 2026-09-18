@@ -2,13 +2,17 @@ export type Categoria = 'CONSULTA' | 'EXAME' | 'VACINACAO' | 'VACINAÇÃO' | 'OU
 export type Prioridade = 'URGENTE' | 'ALTA' | 'MEDIA' | 'MÉDIA' | 'BAIXA';
 export type Status = 'RECEBIDA' | 'EM_ANALISE' | 'EM ANÁLISE' | 'AGENDADA' | 'CONCLUIDA' | 'CONCLUÍDA' | 'CANCELADA';
 
+export interface StatusHistoricoItem {
+  from_status: string | null;
+  to_status: string;
+  created_at: string;
+}
+
 export interface Solicitacao {
   id?: number;
   protocolo: string;
   nome: string;
   nome_solicitante?: string;
-  cartaoSus?: string;
-  cartao_sus?: string;
   categoria: Categoria;
   prioridade: Prioridade;
   status: Status;
@@ -18,6 +22,7 @@ export interface Solicitacao {
   updated_at?: string;
   descricao?: string | null;
   justificativa_prioridade?: string | null;
+  historico_status?: StatusHistoricoItem[];
 }
 
 export interface Filtros {

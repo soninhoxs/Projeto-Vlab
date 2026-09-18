@@ -35,7 +35,7 @@ final class SolicitacaoSummaryCache
         $normalized['page'] = max(1, $page);
         ksort($normalized);
 
-        return 'solicitacoes.list.v'.self::version().'.'.hash('sha256', json_encode($normalized, JSON_THROW_ON_ERROR));
+        return 'solicitacoes.list.json.v'.self::version().'.'.hash('sha256', json_encode($normalized, JSON_THROW_ON_ERROR));
     }
 
     /**

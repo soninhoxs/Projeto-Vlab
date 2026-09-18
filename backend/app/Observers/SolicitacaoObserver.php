@@ -11,6 +11,11 @@ final class SolicitacaoObserver
 {
     public function created(Solicitacao $solicitacao): void
     {
+        $solicitacao->statusHistorico()->create([
+            'from_status' => null,
+            'to_status' => $solicitacao->status->value,
+        ]);
+
         SolicitacaoSummaryCache::bump();
     }
 

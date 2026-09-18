@@ -1,7 +1,6 @@
 import React from 'react';
 import { Eye } from 'lucide-react';
 import type { Solicitacao } from '../types';
-import { maskIdentifier } from '../utils/mask';
 
 interface TableProps {
   data: Solicitacao[];
@@ -112,7 +111,6 @@ export const Table: React.FC<TableProps> = ({ data, isLoading, isRefreshing, onV
                   <td data-label="Solicitante">
                     <div className="table__solicitante">
                       <span className="table__solicitante-name">{item.nome}</span>
-                      <span className="table__solicitante-card">Cartão SUS: {maskIdentifier(item.cartaoSus)}</span>
                     </div>
                   </td>
                   <td data-label="Categoria">
@@ -134,8 +132,14 @@ export const Table: React.FC<TableProps> = ({ data, isLoading, isRefreshing, onV
                   </td>
                   <td data-label="Data de Criação">
                     <span className="table__date">
-                      <time dateTime={`${(item.dataCriacao || '2026-09-17').split('/').reverse().join('-')}T${item.horaCriacao || '00:00'}`}>
-                        {item.dataCriacao || '—'}<br />{item.horaCriacao || ''}
+                      <time dateTime={item.created_at || undefined}>
+                        {item.dataCriacao || '—'}
+                        {item.horaCriacao ? (
+                          <>
+                            <br />
+                            {item.horaCriacao}
+                          </>
+                        ) : null}
                       </time>
                     </span>
                   </td>

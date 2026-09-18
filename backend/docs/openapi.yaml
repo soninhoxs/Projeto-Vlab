@@ -10,6 +10,7 @@ info:
     - Protocolo é gerado automaticamente
     - Prioridade `URGENTE` requer justificativa obrigatória
     - Transições de status seguem o fluxo da state machine
+    - Cada transição (incluindo a criação) é gravada em `historico_status`
 
     ## Observabilidade
 
@@ -75,6 +76,21 @@ paths:
           description: Buscar por nome do solicitante ou protocolo
           schema:
             type: string
+            maxLength: 100
+        - name: data_inicio
+          in: query
+          description: Início do período de criação (inclusive), formato `Y-m-d`
+          schema:
+            type: string
+            format: date
+            example: '2026-09-01'
+        - name: data_fim
+          in: query
+          description: Fim do período de criação (inclusive), formato `Y-m-d`
+          schema:
+            type: string
+            format: date
+            example: '2026-09-18'
       responses:
         '200':
           description: Lista paginada de solicitações
@@ -107,6 +123,9 @@ paths:
       responses:
         '201':
           description: Solicitação criada com sucesso
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -141,6 +160,9 @@ paths:
       responses:
         '200':
           description: Detalhes da solicitação
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -184,6 +206,9 @@ paths:
       responses:
         '200':
           description: Status atualizado com sucesso
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -227,6 +252,8 @@ components:
           example: VTXXXSBCUX
         nome_solicitante:
           type: string
+          minLength: 3
+          maxLength: 120
           example: João da Silva
         categoria:
           type: string
@@ -249,6 +276,11 @@ components:
           nullable: true
           description: Obrigatório quando prioridade é URGENTE
           example: Paciente idoso com sintomas graves
+        historico_status:
+          type: array
+          description: Trilha de transições (somente no detalhe)
+          items:
+            $ref: '#/components/schemas/StatusHistoricoItem'
         created_at:
           type: string
           format: date-time
@@ -272,7 +304,8 @@ components:
       properties:
         nome_solicitante:
           type: string
-          maxLength: 255
+          minLength: 3
+          maxLength: 120
           example: Maria Santos
         categoria:
           type: string
@@ -350,6 +383,45 @@ components:
         total:
           type: integer
           example: 30
+        summary:
+          $ref: '#/components/schemas/SolicitacoesSummary'
+
+    SolicitacoesSummary:
+      type: object
+      properties:
+        total:
+          type: integer
+          example: 30
+        recebidas:
+          type: integer
+          example: 10
+        em_analise:
+          type: integer
+          example: 8
+        agendadas:
+          type: integer
+          example: 5
+        urgentes:
+          type: integer
+          example: 2
+
+    StatusHistoricoItem:
+      type: object
+      properties:
+        from_status:
+          type: string
+          nullable: true
+          enum: [RECEBIDA, EM_ANALISE, AGENDADA, CONCLUIDA, CANCELADA]
+          description: Nulo no evento inicial de criação
+        to_status:
+          type: string
+          enum: [RECEBIDA, EM_ANALISE, AGENDADA, CONCLUIDA, CANCELADA]
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - to_status
+        - created_at
 
     Error:
       type: object

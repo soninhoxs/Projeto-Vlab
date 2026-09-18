@@ -1,33 +1,29 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
-import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Filtros, Solicitacao, PaginationData } from '../types';
 import { DEFAULT_FILTROS } from '../types';
 import { useDebouncedValue } from './useDebouncedValue';
 import {
+  deriveSolicitacoesFromCache,
   fetchSolicitacoes,
-  getNeighborPages,
   getSolicitacoesQueryKey,
   ITEMS_PER_PAGE,
   type AppliedFiltros,
+  type SolicitacoesSummary,
 } from '../api/solicitacoes';
-import { validatePeriod } from '../utils/date';
-import { QUERY_REVALIDATE_INTERVAL_MS, QUERY_STALE_TIME_MS, isBlockingQueryFailure } from '../api/queryClient';
+import { parseApiDate, validatePeriod } from '../utils/date';
+import { QUERY_STALE_TIME_MS, isBlockingQueryFailure } from '../api/queryClient';
 
 const STALE_TIME_MS = QUERY_STALE_TIME_MS;
 
 const mapApiItem = (item: Record<string, unknown>): Solicitacao => {
   let dataCriacao = item.dataCriacao as string | undefined;
   let horaCriacao = item.horaCriacao as string | undefined;
+  const parsedCreatedAt = parseApiDate(item.created_at ?? item.dataCriacao);
 
-  if (!dataCriacao && typeof item.created_at === 'string') {
-    try {
-      const date = new Date(item.created_at);
-      dataCriacao = date.toLocaleDateString('pt-BR');
-      horaCriacao = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    } catch {
-      dataCriacao = '17/09/2026';
-      horaCriacao = '08:00';
-    }
+  if (!dataCriacao && parsedCreatedAt) {
+    dataCriacao = parsedCreatedAt.toLocaleDateString('pt-BR');
+    horaCriacao = parsedCreatedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   }
 
   return {
@@ -35,17 +31,18 @@ const mapApiItem = (item: Record<string, unknown>): Solicitacao => {
     protocolo: String(item.protocolo ?? ''),
     nome: String(item.nome ?? item.nome_solicitante ?? 'Não informado'),
     nome_solicitante: item.nome_solicitante as string | undefined,
-    cartaoSus: typeof item.cartaoSus === 'string' ? item.cartaoSus : (typeof item.cartao_sus === 'string' ? item.cartao_sus : undefined),
-    cartao_sus: typeof item.cartao_sus === 'string' ? item.cartao_sus : undefined,
     categoria: item.categoria as Solicitacao['categoria'],
     prioridade: item.prioridade as Solicitacao['prioridade'],
     status: item.status as Solicitacao['status'],
-    dataCriacao: dataCriacao || '17/09/2026',
-    horaCriacao: horaCriacao || '08:00',
-    created_at: item.created_at as string | undefined,
+    dataCriacao: dataCriacao || '—',
+    horaCriacao: horaCriacao || '',
+    created_at: parsedCreatedAt?.toISOString() ?? (typeof item.created_at === 'string' ? item.created_at : undefined),
     updated_at: item.updated_at as string | undefined,
     descricao: item.descricao as string | null | undefined,
     justificativa_prioridade: item.justificativa_prioridade as string | null | undefined,
+    historico_status: Array.isArray(item.historico_status)
+      ? (item.historico_status as Solicitacao['historico_status'])
+      : undefined,
   };
 };
 
@@ -83,6 +80,19 @@ export const useSolicitacoes = () => {
 
   const queryKey = getSolicitacoesQueryKey(appliedFiltros, currentPage);
 
+  useEffect(() => {
+    void queryClient.cancelQueries({
+      predicate: (query) => {
+        const key = query.queryKey;
+        return (
+          key[0] === 'solicitacoes'
+          && Number(key[2]) !== Number(currentPage)
+          && query.state.fetchStatus === 'fetching'
+        );
+      },
+    });
+  }, [currentPage, queryClient]);
+
   const {
     data: apiResponse,
     isLoading,
@@ -92,17 +102,54 @@ export const useSolicitacoes = () => {
     isPlaceholderData,
   } = useQuery({
     queryKey,
-    queryFn: () => fetchSolicitacoes(appliedFiltros, currentPage),
-    placeholderData: keepPreviousData,
+    queryFn: async ({ signal }) => {
+      const state = queryClient.getQueryState(queryKey);
+      const hasStoredData = (state?.dataUpdatedAt ?? 0) > 0;
+
+      if (!hasStoredData) {
+        const fromCache = deriveSolicitacoesFromCache(queryClient, appliedFiltros, currentPage);
+        if (fromCache) {
+          return fromCache;
+        }
+      }
+
+      return fetchSolicitacoes(appliedFiltros, currentPage, signal);
+    },
+    placeholderData: (previousData) => {
+      const derived = deriveSolicitacoesFromCache(queryClient, appliedFiltros, currentPage);
+      if (derived) {
+        return derived;
+      }
+
+      if (previousData?.current_page === currentPage) {
+        return previousData;
+      }
+
+      return undefined;
+    },
     staleTime: STALE_TIME_MS,
-    refetchInterval: QUERY_REVALIDATE_INTERVAL_MS,
-    refetchIntervalInBackground: false,
-    refetchOnReconnect: true,
-    retry: 2,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: 0,
     enabled: periodValidation.valid,
   });
 
-  const totalPages = apiResponse?.last_page || 1;
+  const listMetaRef = useRef<{ lastPage: number; total: number; summary: SolicitacoesSummary | null }>({
+    lastPage: 1,
+    total: 0,
+    summary: null,
+  });
+
+  if (apiResponse && !isPlaceholderData) {
+    listMetaRef.current = {
+      lastPage: Math.max(1, apiResponse.last_page || 1),
+      total: apiResponse.total || 0,
+      summary: apiResponse.summary ?? listMetaRef.current.summary,
+    };
+  }
+
+  const totalPages = apiResponse?.last_page || listMetaRef.current.lastPage;
 
   const prefetchPage = useCallback(
     (page: number): Promise<unknown> => {
@@ -113,40 +160,26 @@ export const useSolicitacoes = () => {
         return Promise.resolve();
       }
 
+      const key = getSolicitacoesQueryKey(appliedFiltros, page);
+      if (queryClient.getQueryData(key)) {
+        return Promise.resolve();
+      }
+
       return queryClient.prefetchQuery({
-        queryKey: getSolicitacoesQueryKey(appliedFiltros, page),
-        queryFn: () => fetchSolicitacoes(appliedFiltros, page),
+        queryKey: key,
+        queryFn: async ({ signal }) => {
+          const fromCache = deriveSolicitacoesFromCache(queryClient, appliedFiltros, page);
+          if (fromCache) {
+            return fromCache;
+          }
+
+          return fetchSolicitacoes(appliedFiltros, page, signal);
+        },
         staleTime: STALE_TIME_MS,
       });
     },
     [appliedFiltros, currentPage, periodValidation.valid, queryClient, totalPages],
   );
-
-  useEffect(() => {
-    if (!periodValidation.valid || totalPages < 2) {
-      return;
-    }
-
-    const pagesToPrefetch = getNeighborPages(currentPage, totalPages);
-    if (pagesToPrefetch.length === 0) {
-      return;
-    }
-
-    let cancelled = false;
-
-    void (async () => {
-      for (const page of pagesToPrefetch) {
-        if (cancelled) {
-          return;
-        }
-        await prefetchPage(page);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [appliedFiltros, currentPage, periodValidation.valid, prefetchPage, totalPages]);
 
   const currentData: Solicitacao[] = useMemo(() => {
     if (apiResponse?.data && Array.isArray(apiResponse.data)) {
@@ -157,13 +190,14 @@ export const useSolicitacoes = () => {
   }, [apiResponse]);
 
   const kpis = useMemo(() => {
-    if (apiResponse?.summary) {
+    const summary = apiResponse?.summary ?? listMetaRef.current.summary;
+    if (summary) {
       return {
-        total: apiResponse.summary.total,
-        recebidas: apiResponse.summary.recebidas,
-        emAnalise: apiResponse.summary.em_analise,
-        agendadas: apiResponse.summary.agendadas,
-        urgentes: apiResponse.summary.urgentes,
+        total: summary.total,
+        recebidas: summary.recebidas,
+        emAnalise: summary.em_analise,
+        agendadas: summary.agendadas,
+        urgentes: summary.urgentes,
       };
     }
 
@@ -176,7 +210,7 @@ export const useSolicitacoes = () => {
     };
   }, [apiResponse, currentData]);
 
-  const totalItems = apiResponse?.total || 0;
+  const totalItems = apiResponse?.total ?? listMetaRef.current.total;
 
   const generatePagesArray = (current: number, total: number) => {
     const delta = 1;
