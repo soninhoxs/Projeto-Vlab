@@ -10,6 +10,12 @@ info:
     - Protocolo é gerado automaticamente
     - Prioridade `URGENTE` requer justificativa obrigatória
     - Transições de status seguem o fluxo da state machine
+
+    ## Observabilidade
+
+    Toda resposta em `/api/*` inclui o header `X-Request-Id` (UUID ou valor opaco enviado pelo cliente).
+    O canal `api` grava JSON em `storage/logs/api-YYYY-MM-DD.log`: evento `http.response` (método, path, status, duração)
+    e eventos de domínio (`solicitacao.created`, `solicitacao.status_updated`) com protocolo — sem corpo da solicitação.
     
     ## Fluxo de Status
     
@@ -72,6 +78,9 @@ paths:
       responses:
         '200':
           description: Lista paginada de solicitações
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -199,6 +208,12 @@ paths:
                 $ref: '#/components/schemas/ValidationError'
 
 components:
+  headers:
+    XRequestId:
+      description: Identificador opaco da requisição. Ecoa o valor enviado pelo cliente se for `[A-Za-z0-9_-]{8,64}`; senão a API gera um UUID. Presente em todas as respostas `api/*` e no log JSON.
+      schema:
+        type: string
+        example: 8f1e2c3a-4b5d-6789-abcd-ef0123456789
   schemas:
     Solicitacao:
       type: object

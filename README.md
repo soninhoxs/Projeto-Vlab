@@ -132,7 +132,39 @@ O dashboard faz *stale-while-revalidate*: mostra o cache na hora e confirma em s
 
 `API_AUTH_ENABLED` existe no backend (Sanctum) mas **vem desligado**. A fila abre direto em http://localhost:5173.
 
-**Logs HTTP em JSON.** Cada request na API ganha `X-Request-Id`; o canal `api` grava método, rota, status, duração e contexto sanitizado (sem senha/token). Falhas 5xx sobem de nível; 4xx do cliente não viram ruído de incidente.
+---
+
+## Logs e observabilidade
+
+A API não grava o corpo da solicitação (nome, descrição, justificativa). Log é para **operar e correlacionar**, não para espelhar o prontuário.
+
+```mermaid
+flowchart LR
+    SPA[SPA] -->|X-Request-Id| MW[AssignRequestId]
+    MW --> API[Controller]
+    API --> Term[LogHttpResponse terminate]
+    Term --> Svc[ApiLogService]
+    Svc --> San[LogContextSanitizer]
+    San --> File["storage/logs/api-YYYY-MM-DD.log"]
+```
+
+Cada request em `api/*` recebe um `X-Request-Id` (UUID, ou o valor do cliente se for opaco `A-Za-z0-9_-` de 8–64 caracteres). O mesmo id volta no header da resposta (CORS expõe o header) e entra em todo evento do canal `api`. Healthcheck `/up` não é logado.
+
+| Evento | Quando | Campos |
+|--------|--------|--------|
+| `http.response` | fim de cada request `api/*` | método, path, rota, status, frase MDN, categoria, `duration_ms`, `request_id` |
+| `solicitacao.created` | POST que criou o registro | `solicitacao_id`, protocolo, categoria, prioridade, status |
+| `solicitacao.status_updated` | PATCH de transição | id, protocolo, `from_status`, `to_status` |
+
+Nível segue o status HTTP — 2xx `info`, 4xx `warning`, 5xx `error`. Validação `422` não vira incidente; `500` sim.
+
+**Sanitização (LGPD).** `LogContextSanitizer` troca por `[redacted]` chaves com `password`, `senha`, `token`, `authorization`, `cookie`, `cpf`, `email`, `nome_solicitante`, `descricao`, `justificativa`. Strings longas cortam em 512 caracteres. O interceptor Axios, em DEV, loga erro no console **sem query string** (a busca pode ter nome).
+
+Arquivo: `backend/storage/logs/api-YYYY-MM-DD.log`, JSON por linha, retenção 14 dias (`LOG_API_DAYS`). Liga/desliga: `LOG_HTTP_ENABLED`.
+
+```bash
+docker exec vlab_backend sh -c 'tail -n 50 storage/logs/api-$(date +%F).log'
+```
 
 ---
 
@@ -144,6 +176,7 @@ O dashboard faz *stale-while-revalidate*: mostra o cache na hora e confirma em s
 | **Backend** | PHP 8.4, Laravel 13, enums, Form Requests, resources JSON |
 | **Dados** | PostgreSQL 15, migrations, factory/seeder, índices na fila |
 | **Fila** | Paginação, busca, categoria, prioridade, status, período |
+| **Logs** | Canal `api` JSON diário, `X-Request-Id`, eventos de domínio, PII redigida |
 | **Qualidade** | PHPUnit (API + transições + cache + logs), Vitest (datas, máscara, cache) |
 | **DevOps** | Docker Compose, healthcheck do Postgres, OPcache |
 
@@ -227,7 +260,7 @@ _**Detalhe** — tema escuro; só os status legais da máquina de estados._
 
 - Tema claro/escuro persistente (trocar tema **não** fecha filtro/calendário)
 - Logo V-Lab oficial; favicon só com a cruz
-- Estados de loading, vazio e erro de API (erro bloqueante só se não houver cache)
+- Estados de loading, vazio e erro de API (erro bloqueante só se não houver cache; console DEV correlaciona com `X-Request-Id`)
 
 ### Fora deste recorte
 
@@ -282,10 +315,11 @@ Variáveis no `docker-compose.yml` (`VLAB_LIST_CACHE_SECONDS=30`, `VLAB_SUMMARY_
 ├── backend/
 │   ├── app/
 │   │   ├── Enums/
-│   │   ├── Http/             # Controller, Requests, Resources
+│   │   ├── Http/             # Controller, Requests, Resources, middleware de log
+│   │   ├── Logging/          # Formatter JSON do canal api
 │   │   ├── Models/ + Observers + Policies
-│   │   ├── Services/         # Query, state machine, log HTTP
-│   │   └── Support/Cache/    # Chaves versionadas da listagem
+│   │   ├── Services/         # Query, state machine, ApiLogService
+│   │   └── Support/          # Cache da fila, HTTP status, sanitizer de logs
 │   ├── database/             # migrations, factory, seeder, índices
 │   ├── docs/openapi.yaml
 │   └── tests/
@@ -306,8 +340,8 @@ docker exec vlab_backend php artisan test
 cd frontend && npm run test:run
 ```
 
-Backend: transições válidas/inválidas, listagem com período, cache da fila sem query repetida, headers e logs HTTP.  
-Frontend: data BR, máscara SUS, insert no cache, páginas vizinhas (prefetch) e persistência do React Query.
+Backend: transições válidas/inválidas, listagem com período, cache da fila sem query repetida, `X-Request-Id`, `http.response` e redaction de PII.  
+Frontend: data BR, máscara SUS, insert no cache, páginas vizinhas (prefetch), persistência do React Query e mensagem por status HTTP.
 
 ---
 
