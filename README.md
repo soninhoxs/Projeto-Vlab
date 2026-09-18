@@ -1,5 +1,9 @@
 # V-Lab
 
+<p align="center">
+  <img src="docs/logo-vlab.png" alt="V-Lab" width="320" />
+</p>
+
 **Sistema de gestão de solicitações de atendimento para unidades públicas de saúde.**
 
 React · TypeScript · Laravel · PostgreSQL · Docker
@@ -121,7 +125,25 @@ O desafio **não pede login**. Autorização HTTP fica aberta no recorte local; 
 
 ## Design e UX
 
-Fila de regulação: hierarquia clara (KPIs → filtros → tabela), tema SUS-verde, wordmark oficial (não recriada).
+Fila de regulação: hierarquia clara (KPIs → filtros → tabela) e paleta SUS-verde.
+
+### Identidade visual
+
+A marca do app é a **logo criada para o V-Lab** — cruz + wordmark. Não foi redesenhada por IA. Está na sidebar, no header e na aba do navegador.
+
+<p>
+  <img src="docs/logo-vlab.png" alt="Wordmark V-Lab" width="280" />
+</p>
+
+<p>
+  <img src="docs/favicon.png" alt="Favicon — cruz V-Lab" width="64" />
+</p>
+
+| Peça | Arquivo | Uso |
+|------|---------|-----|
+| Wordmark | [`docs/logo-vlab.png`](docs/logo-vlab.png) · [`frontend/public/logo-vlab.png`](frontend/public/logo-vlab.png) | Sidebar e header |
+| Cruz (favicon) | [`docs/favicon.png`](docs/favicon.png) · [`frontend/public/favicon.png`](frontend/public/favicon.png) | Ícone da aba (16×16); a logo inteira ilegível nesse tamanho |
+| Vetor | [`docs/logo-vlab.svg`](docs/logo-vlab.svg) | Fonte vetorial da marca |
 
 | Princípio | Na prática |
 |-----------|------------|
@@ -223,7 +245,10 @@ Variáveis no `docker-compose.yml`. Modelo sem senha real: [`backend/.env.exampl
 │   ├── database/             # migrations, factory, seeder
 │   ├── docs/openapi.yaml
 │   └── tests/
-├── docs/screenshots/
+├── docs/
+│   ├── logo-vlab.png         # Marca (wordmark)
+│   ├── favicon.png           # Cruz para a aba
+│   └── screenshots/
 └── docker-compose.yml
 ```
 
