@@ -314,6 +314,24 @@ PHPUnit **não** usa o Postgres do Compose: `tests/TestCase.php` força SQLite `
 
 ---
 
+## Fluxo de git
+
+A **`main`** é a versão estável (CI verde). Não commitamos nem fazemos push direto nela.
+
+Trabalho novo sai de `develop` (ou de uma branch `feat/...` a partir dela). Quando estiver pronto, abre um **pull request para `main`**. Só depois do CI passar a `main` recebe o merge.
+
+```bash
+git checkout develop
+git pull origin develop
+git checkout -b feat/minha-mudanca
+# ... altera, testa, commit ...
+git push -u origin feat/minha-mudanca
+```
+
+No GitHub: PR `feat/minha-mudanca` → `main` (ou → `develop`, se a entrega for em etapas).
+
+---
+
 ## Estrutura do repositório
 
 ```
