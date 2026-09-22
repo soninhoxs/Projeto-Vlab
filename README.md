@@ -87,6 +87,7 @@ O que o operador espera no `201`/`200` continua síncrono: protocolo, status, hi
 | `POST` | `/api/v1/solicitacoes` | Cria (protocolo no servidor) | Recurso novo; status começa em `RECEBIDA` |
 | `GET` | `/api/v1/solicitacoes/{id}` | Detalhe + histórico de status | Leitura pontual |
 | `PATCH` | `/api/v1/solicitacoes/{id}/status` | Só o próximo status | Atualização parcial; a máquina de estados decide |
+| `GET` | `/up` | Health da API + `SELECT 1` no banco | Leitura; fora de `/api/v1`; não entra no log |
 
 **Não há** `PUT` (substituiria o registro inteiro), `DELETE` (fora do recorte) nem tela de login. CORS libera só `GET`, `POST`, `PATCH` e `OPTIONS`.
 
@@ -132,6 +133,8 @@ Filtro mais estreito pode ser derivado do cache completo, sem novo GET. Se a API
 **Calendário próprio.** `<input type="date">` nativo estourava o layout, pintava seleção azul e mandava `99/99/9999` para a API (422 disfarçado de “erro de conexão”). O período é `dd/mm/aaaa` por segmento + painel, com validação **antes** do request.
 
 **Docker no Windows sem I/O no `vendor`.** Bind mount de milhares de arquivos PHP no Docker Desktop é o que fazia o `/up` levar ~4 s e cada página da fila 3–8 s. O Compose monta `vlab_vendor` em Linux; o entrypoint roda `composer install` e depois `artisan serve`. Cache/sessão em `array`, 8 workers. O log da API sai em JSON no `stderr` (`LOG_HTTP_CHANNEL=api_stderr`), não em arquivo no bind mount.
+
+**Health check consulta o banco.** `GET /up` dispara `DiagnosingHealth`. O listener `VerificarConexaoDoBanco` executa `SELECT 1` na conexão padrão — no Compose, PostgreSQL (`DB_CONNECTION=pgsql`). Se a query falha, a rota responde **500** (`{"status":"down"}` para cliente JSON; HTML quando não). Com o banco no ar, **200** e `{"status":"up"}`. O healthcheck do serviço `backend` chama essa URL; o container só fica healthy quando a API consegue falar com o Postgres. O `pg_isready` do serviço `db` continua separado: ele só diz que o processo do banco aceita conexão, não que a API chega nele. `/up` não é logado.
 
 **Superfície pequena e validação no servidor.** O desafio **não pede login**. A defesa do recorte local é API mínima + integridade, não IAM:
 
@@ -215,7 +218,7 @@ Para gravar o canal `api` em arquivo, suba com `LOG_HTTP_CHANNEL=api` e `LOG_CHA
 | **Logs** | Canal `api` JSON diário, `X-Request-Id`, eventos de domínio, PII redigida |
 | **Assíncrono** | Fila `dominio` na tabela `jobs` (sem Redis); worker `vlab_queue` |
 | **Qualidade** | GitHub Actions: Pint + oxlint, PHPUnit, Vitest, build Vite, Playwright |
-| **DevOps** | Docker Compose, volume `vendor`, healthcheck, OPcache, 8 workers |
+| **DevOps** | Docker Compose, volume `vendor`, `/up` com `SELECT 1` no Postgres, OPcache, 8 workers |
 
 ---
 
@@ -301,7 +304,7 @@ _**Detalhe** — tema escuro; só os status legais da máquina de estados._
 
 ### Fora deste recorte
 
-Autenticação de operador, edição após criar (exceto status) e exclusão. O `/up` do Laravel cobre o healthcheck do Compose.
+Autenticação de operador, edição após criar (exceto status) e exclusão. O `GET /up` verifica a API e a conexão com o PostgreSQL; o Compose usa essa rota no healthcheck do backend.
 
 ---
 
@@ -330,7 +333,7 @@ docker compose up -d
 | Frontend | http://localhost:5173 |
 | API | http://localhost:8000/api/v1 |
 
-O backend espera o Postgres healthy, instala o `vendor` no volume Linux (primeira subida demora o `composer install`) e roda **migrations**. O `vlab_queue` sobe depois da API healthy e consome a fila `dominio`. Não há tela de login. Seed (dados de exemplo, opcional):
+O backend espera o Postgres healthy (`pg_isready`), instala o `vendor` no volume Linux (primeira subida demora o `composer install`) e roda **migrations**. O healthcheck do `vlab_backend` chama `GET /up`, que executa `SELECT 1` no PostgreSQL — porta aberta sem banco não conta como healthy. O `vlab_queue` sobe depois disso e consome a fila `dominio`. Não há tela de login. Seed (dados de exemplo, opcional):
 
 ```bash
 docker exec vlab_backend php artisan db:seed --force
@@ -375,7 +378,7 @@ No GitHub: PR `feat/minha-mudanca` → `main` (ou → `develop`, se a entrega fo
 │   ├── app/
 │   │   ├── Enums/
 │   │   ├── Events/           # SolicitacaoCriada, SolicitacaoStatusAlterado
-│   │   ├── Listeners/        # RegistrarEventoDeDominio (fila dominio)
+│   │   ├── Listeners/        # log de domínio na fila; SELECT 1 no /up
 │   │   ├── Http/             # Controller, Requests, Resources, middleware de log
 │   │   ├── Logging/          # Formatter JSON do canal api
 │   │   ├── Models/           # Solicitacao + SolicitacaoStatusHistorico
@@ -423,7 +426,7 @@ cd frontend && npm run test:run
 cd frontend && npx playwright test
 ```
 
-Backend: transições válidas/inválidas, histórico de status, colisão de protocolo, listagem com período, cache da fila sem query repetida, `X-Request-Id`, `http.response` e redaction de PII. O POST devolve `201` com o histórico já gravado e o log de domínio ainda na tabela `jobs` (sem nome nem descrição no payload); o worker é que emite `solicitacao.created`.  
+Backend: transições válidas/inválidas, histórico de status, colisão de protocolo, listagem com período, cache da fila sem query repetida, `X-Request-Id`, `http.response`, redaction de PII e `/up` (200 com banco no ar, 500 quando o `SELECT 1` falha). O POST devolve `201` com o histórico já gravado e o log de domínio ainda na tabela `jobs` (sem nome nem descrição no payload); o worker é que emite `solicitacao.created`.  
 Frontend: data BR, validação do formulário, tabela/paginação, insert no cache, persistência **sem** PII da lista, GET sem `Content-Type`, mensagem por status HTTP.  
 E2E (Playwright): criar → listar → `RECEBIDA → EM_ANALISE` → conferir o histórico. O pipeline que executa isso no GitHub Actions está em [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
