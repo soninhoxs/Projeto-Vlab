@@ -3,6 +3,7 @@
 use App\Http\Middleware\AssignRequestId;
 use App\Http\Middleware\LogHttpResponse;
 use App\Http\Middleware\SecurityHeaders;
+use App\Services\ApiLogService;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -51,6 +52,18 @@ return Application::configure(basePath: dirname(__DIR__))
                 return response()->json([
                     'message' => 'Muitas requisições. Tente novamente em instantes.',
                 ], 429);
+            }
+        });
+
+        $exceptions->report(function (Throwable $e): void {
+            try {
+                if (! app()->bound(ApiLogService::class)) {
+                    return;
+                }
+
+                app(ApiLogService::class)->logIntegrationFailure(request(), $e);
+            } catch (Throwable) {
+                // Falha ao logar não pode esconder a exceção original.
             }
         });
     })->create();

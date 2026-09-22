@@ -50,6 +50,23 @@ export function safeClientLogPath(url: string): string {
   return pathOnly.length > 120 ? `${pathOnly.slice(0, 120)}…` : pathOnly;
 }
 
+export function logClientIntegrationFailure(
+  method: string,
+  url: string,
+  reason: 'timeout' | 'network',
+  requestId?: string,
+): void {
+  if (!import.meta.env.DEV) return;
+
+  console.error('[V-Lab API]', {
+    event: 'integration.failed',
+    method,
+    path: safeClientLogPath(url),
+    reason,
+    request_id: requestId,
+  });
+}
+
 export function logHttpClientError(
   method: string,
   url: string,

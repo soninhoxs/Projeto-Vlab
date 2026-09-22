@@ -12,8 +12,15 @@ return [
     |
     */
 
-    'enabled' => env('LOG_HTTP_ENABLED', true),
+    'enabled' => filter_var(env('LOG_HTTP_ENABLED', true), FILTER_VALIDATE_BOOL),
 
     'channel' => env('LOG_HTTP_CHANNEL', 'api'),
+
+    /*
+     * GET da fila 2xx abaixo de 400 ms não grava http.response quando a saída
+     * é arquivo. No Compose (stderr) isso fica desligado para a listagem
+     * aparecer em `docker logs`.
+     */
+    'skip_fast_index' => filter_var(env('LOG_HTTP_SKIP_FAST_INDEX', true), FILTER_VALIDATE_BOOL),
 
 ];

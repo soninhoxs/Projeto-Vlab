@@ -42,6 +42,7 @@
         <env name="LOG_HTTP_ENABLED" value="true" force="true"/>
         <env name="LOG_HTTP_CHANNEL" value="api" force="true"/>
         <env name="LOG_API_LEVEL" value="debug" force="true"/>
+        <env name="LOG_HTTP_SKIP_FAST_INDEX" value="true" force="true"/>
         <env name="VLAB_SUMMARY_CACHE_SECONDS" value="15"/>
         <env name="VLAB_LIST_CACHE_SECONDS" value="30"/>
     </php>

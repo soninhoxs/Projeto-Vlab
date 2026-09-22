@@ -29,7 +29,11 @@ class HttpRequestLoggingTest extends TestCase
 
     public function test_fast_successful_list_skips_http_response_log(): void
     {
-        config(['http_logging.enabled' => true, 'http_logging.channel' => 'api']);
+        config([
+            'http_logging.enabled' => true,
+            'http_logging.channel' => 'api',
+            'http_logging.skip_fast_index' => true,
+        ]);
         $logged = $this->captureLoggedMessages();
 
         Solicitacao::factory()->count(2)->create();
@@ -44,6 +48,30 @@ class HttpRequestLoggingTest extends TestCase
         );
 
         $this->assertNull($httpLog);
+    }
+
+    public function test_fast_successful_list_is_logged_when_skip_is_disabled(): void
+    {
+        config([
+            'http_logging.enabled' => true,
+            'http_logging.channel' => 'api',
+            'http_logging.skip_fast_index' => false,
+        ]);
+        $logged = $this->captureLoggedMessages();
+
+        Solicitacao::factory()->count(2)->create();
+
+        $response = $this->getJson('/api/v1/solicitacoes');
+
+        $response->assertOk();
+
+        $httpLog = $logged->first(
+            fn (MessageLogged $entry) => $entry->message === 'http.response',
+        );
+
+        $this->assertNotNull($httpLog);
+        $this->assertSame(200, $httpLog->context['status_code'] ?? null);
+        $this->assertSame($response->headers->get('X-Request-Id'), $httpLog->context['request_id'] ?? null);
     }
 
     public function test_successful_create_logs_http_response_at_info(): void

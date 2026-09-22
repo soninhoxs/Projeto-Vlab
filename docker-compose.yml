@@ -47,7 +47,10 @@ services:
       - LOG_CHANNEL=stderr
       - LOG_STACK=stderr
       - LOG_LEVEL=warning
-      - LOG_HTTP_ENABLED=false
+      - LOG_HTTP_ENABLED=true
+      - LOG_HTTP_CHANNEL=api_stderr
+      - LOG_API_LEVEL=info
+      - LOG_HTTP_SKIP_FAST_INDEX=false
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:

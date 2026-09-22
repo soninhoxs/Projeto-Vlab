@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { AxiosError, AxiosHeaders } from 'axios';
 import type { InternalAxiosRequestConfig } from 'axios';
-import { resolveApiErrorMessage, stripContentTypeOnSafeRequests, type ApiClientError } from './client';
+import { enrichApiError, resolveApiErrorMessage, stripContentTypeOnSafeRequests, type ApiClientError } from './client';
 
 describe('stripContentTypeOnSafeRequests', () => {
   it('removes JSON content-type from GET so the browser skips CORS preflight', () => {
@@ -28,6 +28,34 @@ describe('stripContentTypeOnSafeRequests', () => {
     stripContentTypeOnSafeRequests(config);
 
     expect(config.headers.get('Content-Type')).toBe('application/json');
+  });
+});
+
+describe('enrichApiError', () => {
+  it('turns a network failure into a user-facing message and a structured log', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const axiosError = new AxiosError(
+      'Network Error',
+      'ERR_NETWORK',
+      { url: '/solicitacoes?busca=Maria', method: 'get', headers: new AxiosHeaders() },
+    );
+
+    await expect(enrichApiError(axiosError)).rejects.toThrow(
+      'Não foi possível conectar à API',
+    );
+
+    expect(errorSpy).toHaveBeenCalledOnce();
+    const payload = errorSpy.mock.calls[0][1] as Record<string, unknown>;
+    expect(payload.event).toBe('integration.failed');
+    expect(payload.reason).toBe('network');
+    expect(payload.path).toBe('/solicitacoes');
+    errorSpy.mockRestore();
+  });
+
+  it('leaves aborted requests untouched', async () => {
+    const axiosError = new AxiosError('canceled', 'ERR_CANCELED');
+
+    await expect(enrichApiError(axiosError)).rejects.toBe(axiosError);
   });
 });
 

@@ -120,7 +120,7 @@ Filtro mais estreito pode ser derivado do cache completo, sem novo GET. Se a API
 
 **Calendário próprio.** `<input type="date">` nativo estourava o layout, pintava seleção azul e mandava `99/99/9999` para a API (422 disfarçado de “erro de conexão”). O período é `dd/mm/aaaa` por segmento + painel, com validação **antes** do request.
 
-**Docker no Windows sem I/O no `vendor`.** Bind mount de milhares de arquivos PHP no Docker Desktop é o que fazia o `/up` levar ~4 s e cada página da fila 3–8 s. O Compose monta `vlab_vendor` em Linux; o entrypoint roda `composer install` e depois `artisan serve`. Cache/sessão em `array`, 8 workers, log em `stderr`, `LOG_HTTP_ENABLED=false` no Compose (o canal `api` em arquivo continua disponível fora do Docker).
+**Docker no Windows sem I/O no `vendor`.** Bind mount de milhares de arquivos PHP no Docker Desktop é o que fazia o `/up` levar ~4 s e cada página da fila 3–8 s. O Compose monta `vlab_vendor` em Linux; o entrypoint roda `composer install` e depois `artisan serve`. Cache/sessão em `array`, 8 workers. O log da API sai em JSON no `stderr` (`LOG_HTTP_CHANNEL=api_stderr`), não em arquivo no bind mount.
 
 **Superfície pequena e validação no servidor.** O desafio **não pede login**. A defesa do recorte local é API mínima + integridade, não IAM:
 
@@ -152,28 +152,37 @@ flowchart LR
     API --> Term[LogHttpResponse terminate]
     Term --> Svc[ApiLogService]
     Svc --> San[LogContextSanitizer]
-    San --> File["storage/logs/api-YYYY-MM-DD.log"]
+    San --> Out["stderr JSON no Compose · arquivo fora dele"]
 ```
 
-Cada request em `api/*` recebe um `X-Request-Id` (UUID, ou o valor do cliente se for opaco `A-Za-z0-9_-` de 8–64 caracteres). O mesmo id volta no header da resposta (CORS expõe o header) e entra em todo evento do canal `api`. Healthcheck `/up` não é logado. `GET /solicitacoes` 2xx mais rápido que 400 ms também **não** gera `http.response` — senão o disco vira gargalo na fila.
+Cada request em `api/*` recebe um `X-Request-Id` (UUID, ou o valor do cliente se for opaco `A-Za-z0-9_-` de 8–64 caracteres). O mesmo id volta no header da resposta (CORS expõe o header) e entra em todo evento do canal de API. Healthcheck `/up` não é logado.
+
+No **Compose de entrega** o canal é `api_stderr`: uma linha JSON por evento em `docker logs`, nível `info` (`LOG_API_LEVEL`), independente do `LOG_LEVEL=warning` do framework. A listagem entra no log (`LOG_HTTP_SKIP_FAST_INDEX=false`). O `artisan serve` repassa esses `LOG_*` ao processo HTTP — valem mesmo com um `.env` ao lado. Fora do Docker o canal padrão é o arquivo diário; aí um `GET /solicitacoes` 2xx mais rápido que 400 ms **não** gera `http.response`, para o disco do bind mount não virar gargalo.
 
 | Evento | Quando | Campos |
 |--------|--------|--------|
 | `http.response` | fim de cada request `api/*` | método, path, rota, status, frase MDN, categoria, `duration_ms`, `request_id` |
 | `solicitacao.created` | POST que criou o registro | `solicitacao_id`, protocolo, categoria, prioridade, status |
 | `solicitacao.status_updated` | PATCH de transição | id, protocolo, `from_status`, `to_status` |
+| `integration.failed` | `QueryException` / `PDOException` em `api/*` | `request_id`, `dependency=database`, classe, `sqlstate` |
 
-Nível segue o status HTTP — 2xx `info`, 4xx `warning`, 5xx `error`. Validação `422` não vira incidente; `500` sim.
+Nível segue o status HTTP — 2xx `info`, 4xx `warning`, 5xx `error`. Validação `422` não vira incidente; `500` e falha de banco sim. Os dois últimos compartilham o `request_id` da mesma requisição. A mensagem da exceção de SQL **não** entra no log (pode conter dados da solicitação).
 
-**Sanitização (LGPD).** `LogContextSanitizer` troca por `[redacted]` chaves com `password`, `senha`, `token`, `authorization`, `cookie`, `cpf`, `email`, `nome_solicitante`, `descricao`, `justificativa`. Strings longas cortam em 512 caracteres. O interceptor Axios, em DEV, loga erro no console **sem query string** (a busca pode ter nome).
+**Sanitização (LGPD).** `LogContextSanitizer` troca por `[redacted]` chaves com `password`, `senha`, `token`, `authorization`, `cookie`, `cpf`, `email`, `nome_solicitante`, `descricao`, `justificativa`. Strings longas cortam em 512 caracteres. O interceptor Axios, em DEV, loga erro no console **sem query string** (a busca pode ter nome). Timeout e falha de rede (pedido que nem chegou na API) viram `integration.failed` no console e uma mensagem na fila; cancelamento da listagem não entra nesse log.
 
-Arquivo (fora do Compose): `backend/storage/logs/api-YYYY-MM-DD.log`, JSON por linha, retenção 14 dias (`LOG_API_DAYS`). No Docker o canal padrão é `stderr` e `LOG_HTTP_ENABLED=false`. Liga/desliga: `LOG_HTTP_ENABLED`.
+Arquivo (fora do Compose): `backend/storage/logs/api-YYYY-MM-DD.log`, JSON por linha, retenção 14 dias (`LOG_API_DAYS`). Liga/desliga: `LOG_HTTP_ENABLED` (`false` como string desliga de verdade).
 
 ```bash
 docker logs vlab_backend --tail 50
 ```
 
-Para gravar o canal `api` em arquivo, suba com `LOG_HTTP_ENABLED=true` e `LOG_CHANNEL=stack`.
+Uma linha típica no Compose:
+
+```json
+{"message":"http.response","context":{"event":"http.response","request_id":"…","method":"GET","path":"/api/v1/solicitacoes","status_code":200,"duration_ms":12.4}}
+```
+
+Para gravar o canal `api` em arquivo, suba com `LOG_HTTP_CHANNEL=api` e `LOG_CHANNEL=stack`.
 
 ---
 

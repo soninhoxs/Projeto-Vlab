@@ -1,6 +1,8 @@
 <?php
 
 use App\Logging\JsonLogFormatter;
+use App\Logging\RequestIdProcessor;
+use Monolog\Formatter\JsonFormatter;
 use Monolog\Handler\NullHandler;
 use Monolog\Handler\StreamHandler;
 use Monolog\Handler\SyslogUdpHandler;
@@ -75,6 +77,26 @@ return [
             'tap' => [JsonLogFormatter::class],
         ],
 
+        /*
+         * Mesmo contrato do canal api, mas em stderr. O Compose usa este canal
+         * para o avaliador ver JSON em `docker logs` sem I/O no bind mount.
+         * O nível é LOG_API_LEVEL, independente de LOG_LEVEL (ruído do framework).
+         */
+        'api_stderr' => [
+            'driver' => 'monolog',
+            'level' => env('LOG_API_LEVEL', 'info'),
+            'handler' => StreamHandler::class,
+            'handler_with' => [
+                'stream' => 'php://stderr',
+            ],
+            'formatter' => JsonFormatter::class,
+            'formatter_with' => [
+                'batchMode' => JsonFormatter::BATCH_MODE_NEWLINES,
+                'appendNewline' => true,
+            ],
+            'processors' => [PsrLogMessageProcessor::class, RequestIdProcessor::class],
+        ],
+
         'daily' => [
             'driver' => 'daily',
             'path' => storage_path('logs/laravel.log'),
@@ -120,7 +142,7 @@ return [
                 'stream' => 'php://stderr',
             ],
             'formatter' => env('LOG_STDERR_FORMATTER'),
-            'processors' => [PsrLogMessageProcessor::class],
+            'processors' => [PsrLogMessageProcessor::class, RequestIdProcessor::class],
         ],
 
         'syslog' => [

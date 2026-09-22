@@ -1,6 +1,6 @@
 import axios, { isAxiosError } from 'axios';
 import type { InternalAxiosRequestConfig } from 'axios';
-import { logHttpClientError, messageForHttpStatus } from '../utils/httpStatus';
+import { logClientIntegrationFailure, logHttpClientError, messageForHttpStatus } from '../utils/httpStatus';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
@@ -33,40 +33,57 @@ export function stripContentTypeOnSafeRequests(
 
 api.interceptors.request.use(stripContentTypeOnSafeRequests);
 
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (!isAxiosError(error) || !error.response) {
-      return Promise.reject(error);
-    }
+export function enrichApiError(error: unknown): Promise<never> {
+  if (!isAxiosError(error)) {
+    return Promise.reject(error);
+  }
 
-    const { status, data } = error.response;
-    const requestId = error.response.headers['x-request-id'] as string | undefined;
+  if (error.code === 'ERR_CANCELED') {
+    return Promise.reject(error);
+  }
+
+  if (!error.response) {
     const method = error.config?.method?.toUpperCase() ?? 'GET';
     const url = error.config?.url ?? '';
+    const timedOut = error.code === 'ECONNABORTED';
 
-    logHttpClientError(method, url, status, requestId);
+    logClientIntegrationFailure(method, url, timedOut ? 'timeout' : 'network');
 
-    const payload = typeof data === 'object' && data !== null ? data as Record<string, unknown> : {};
-    const apiMessage =
-      'message' in payload ? String(payload.message ?? '') : '';
+    const message = timedOut
+      ? 'A requisição demorou demais. Aguarde a fila terminar de carregar e tente novamente.'
+      : 'Não foi possível conectar à API. Verifique se o serviço está no ar e tente novamente.';
 
-    const validationErrors =
-      'errors' in payload && payload.errors && typeof payload.errors === 'object'
-        ? (payload.errors as Record<string, string[]>)
-        : undefined;
+    return Promise.reject(new Error(message));
+  }
 
-    const message = apiMessage || messageForHttpStatus(status);
-    const enriched = new Error(message) as ApiClientError;
-    enriched.status = status;
-    enriched.requestId = requestId;
-    if (validationErrors) {
-      enriched.validationErrors = validationErrors;
-    }
+  const { status, data } = error.response;
+  const requestId = error.response.headers['x-request-id'] as string | undefined;
+  const method = error.config?.method?.toUpperCase() ?? 'GET';
+  const url = error.config?.url ?? '';
 
-    return Promise.reject(enriched);
-  },
-);
+  logHttpClientError(method, url, status, requestId);
+
+  const payload = typeof data === 'object' && data !== null ? data as Record<string, unknown> : {};
+  const apiMessage =
+    'message' in payload ? String(payload.message ?? '') : '';
+
+  const validationErrors =
+    'errors' in payload && payload.errors && typeof payload.errors === 'object'
+      ? (payload.errors as Record<string, string[]>)
+      : undefined;
+
+  const message = apiMessage || messageForHttpStatus(status);
+  const enriched = new Error(message) as ApiClientError;
+  enriched.status = status;
+  enriched.requestId = requestId;
+  if (validationErrors) {
+    enriched.validationErrors = validationErrors;
+  }
+
+  return Promise.reject(enriched);
+}
+
+api.interceptors.response.use((response) => response, enrichApiError);
 
 export function sanitizeSearch(value: string): string {
   return value.replace(/[\u0000-\u001F\u007F]/g, '').trim().slice(0, 100);
