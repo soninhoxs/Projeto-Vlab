@@ -14,7 +14,7 @@ Repositório: [soninhoxs/Projeto-Vlab](https://github.com/soninhoxs/Projeto-Vlab
 
 ![Fila de solicitações](docs/screenshots/fila-solicitacoes.png)
 
-_Fila operacional — KPIs, filtros e listagem paginada._
+_Fila operacional — menu com Fila de Solicitações e Painel, cinco KPIs, filtros e listagem paginada._
 
 ---
 
@@ -33,6 +33,7 @@ Filas de atendimento misturam busca, período, prioridade e ciclo de vida do ped
 - **Domínio no servidor** — enums, state machine e Form Requests; o cliente não inventa transição.
 - **Consulta em um serviço** — filtros (status, categoria, prioridade, busca, período) isolados do controller.
 - **SPA com cache honesto** — TanStack Query; o `201` confirmado entra na página 1, sem linha fake e **sem refetch de todas as páginas**. A lista só busca de novo quando o operador muda página ou filtro (fresco por 5 min).
+- **Painel no mesmo contrato** — o menu troca a fila por gráficos do `summary` (status, prioridade, categoria e entradas dos últimos 14 dias). Não há tela inventada de triagem, leitos ou relatório.
 - **Um Compose** — Postgres + API + Vite; `vendor` em volume Linux, OPcache e 8 workers no PHP para o bind mount do Windows não travar cada GET.
 
 ---
@@ -83,7 +84,7 @@ O que o operador espera no `201`/`200` continua síncrono: protocolo, status, hi
 
 | Método | Endpoint | Papel | Por que este verbo |
 |--------|----------|--------|--------------------|
-| `GET` | `/api/v1/solicitacoes` | Lista paginada + filtros + KPIs | Leitura; pode ir em cache |
+| `GET` | `/api/v1/solicitacoes` | Lista paginada + filtros + `summary` (KPIs e Painel) | Leitura; pode ir em cache |
 | `POST` | `/api/v1/solicitacoes` | Cria (protocolo no servidor) | Recurso novo; status começa em `RECEBIDA` |
 | `GET` | `/api/v1/solicitacoes/{id}` | Detalhe + histórico de status | Leitura pontual |
 | `PATCH` | `/api/v1/solicitacoes/{id}/status` | Só o próximo status | Atualização parcial; a máquina de estados decide |
@@ -92,6 +93,10 @@ O que o operador espera no `201`/`200` continua síncrono: protocolo, status, hi
 **Não há** `PUT` (substituiria o registro inteiro), `DELETE` (fora do recorte) nem tela de login. CORS libera só `GET`, `POST`, `PATCH` e `OPTIONS`.
 
 Filtros de listagem: `status`, `categoria`, `prioridade`, `busca`, `data_inicio`, `data_fim` (`Y-m-d`). Período aplica intervalo em `created_at` (`>= 00:00:00` / `<= 23:59:59`), não `whereDate` por linha.
+
+O `summary` da listagem alimenta os cinco cartões e o Painel: `total`, `recebidas`, `em_analise`, `agendadas`, `urgentes`, mais `por_status`, `por_categoria`, `por_prioridade` e `por_dia` (14 dias, inclusive dia zerado). O Painel lê a fila inteira, sem o filtro que estiver aberto na tabela.
+
+O `POST` de criação manda `nome_solicitante`, `categoria`, `prioridade` e, se houver, `descricao`. `justificativa_prioridade` só entra quando a prioridade é `URGENTE`. A resposta `201` devolve `message` e `data` já com `id`, `protocolo`, `status: RECEBIDA` e `created_at` em ISO. Na captura local esse request levou **525 ms** (359 ms esperando o servidor). Nome, descrição e justificativa voltam para o operador nessa resposta; o log de domínio não grava esses campos.
 
 OpenAPI: [`backend/docs/openapi.yaml`](backend/docs/openapi.yaml) — alinhado ao Form Request (sem Cartão SUS, sem datas inventadas no create; `historico_status` no detalhe).
 
@@ -215,6 +220,7 @@ Para gravar o canal `api` em arquivo, suba com `LOG_HTTP_CHANNEL=api` e `LOG_CHA
 | **Backend** | PHP 8.4, Laravel 13, enums, Form Requests, resources JSON |
 | **Dados** | PostgreSQL 15, migrations, factory/seeder, índices na fila |
 | **Fila** | Paginação, busca, categoria, prioridade, status, período |
+| **Painel** | Barras de status, prioridade e categoria; colunas dos últimos 14 dias |
 | **Logs** | Canal `api` JSON diário, `X-Request-Id`, eventos de domínio, PII redigida |
 | **Assíncrono** | Fila `dominio` na tabela `jobs` (sem Redis); worker `vlab_queue` |
 | **Qualidade** | GitHub Actions: Pint + oxlint, PHPUnit, Vitest, build Vite, Playwright |
@@ -268,21 +274,43 @@ Board de cor, tipo e componentes da identidade:
 | **Confiança** | Modal de detalhe com transições possíveis; inválidas nem aparecem |
 | **Acessibilidade** | `aria-*` nos filtros e modais, skip link, teclado nos dropdowns |
 
-Fluxos: **capturar** (nova solicitação) → **varrer a fila** (filtros + período) → **agir** (detalhe / próximo status).
+Fluxos: **capturar** (nova solicitação) → **varrer a fila** (filtros + período) → **agir** (detalhe / próximo status) → **ler o painel** (distribuição da fila).
 
-Sidebar vira drawer no estreito; o hamburger abre e fecha. Header (operador, conexão, tema, ações) alinha na mesma linha.
+O menu operacional tem dois destinos: **Fila de Solicitações** e **Painel**. No estreito a sidebar vira drawer; o hamburger abre e fecha. O header mantém operador, conexão, tema e ações na mesma linha. Tema claro na fila e escuro no painel, no cadastro e no detalhe das capturas.
 
 ---
 
 ## Galeria
 
+![Fila de solicitações](docs/screenshots/fila-solicitacoes.png)
+
+_**Fila** — tema claro. Menu à esquerda, KPIs (total, recebidas, em análise, agendadas, críticas), filtros numa linha e a tabela com protocolo, solicitante, categoria, prioridade, status, data e “Detalhes / Status”._
+
+O cartão de total ainda mostra o texto “+8 hoje vs ontem”. Esse rótulo não vem do banco. A entrada do dia medida está no Painel.
+
+![Painel](docs/screenshots/painel.png)
+
+_**Painel** — tema escuro. “57 solicitações na fila, 1 com entrada hoje.” Colunas dos últimos 14 dias (56 em 18/09, 1 em 22/09) e barras de status, prioridade e categoria com os mesmos totais da fila._
+
 ![Nova solicitação](docs/screenshots/nova-solicitacao.png)
 
-_**Criar** — validação no cliente e no Form Request; urgente pede justificativa._
+_**Criar** — tema escuro. Nome, categoria, prioridade e descrição. Com prioridade Baixa a justificativa não aparece; com URGENTE o Form Request exige `justificativa_prioridade`._
 
 ![Detalhe da solicitação](docs/screenshots/detalhe-solicitacao.png)
 
-_**Detalhe** — tema escuro; só os status legais da máquina de estados._
+_**Detalhe** — protocolo, solicitante, categoria, prioridade, datas, descrição e histórico. Status `RECEBIDA` só oferece Em Análise e Cancelada._
+
+![Payload do POST](docs/screenshots/post-payload.png)
+
+_**Request** — `nome_solicitante`, `categoria: VACINACAO`, `prioridade: URGENTE`, `descricao` e `justificativa_prioridade`._
+
+![Resposta 201](docs/screenshots/post-resposta.png)
+
+_**Response** — `201` com “Solicitação criada com sucesso”, `id`, `protocolo` gerado no servidor, `status: RECEBIDA` e `created_at` em UTC._
+
+![Tempo do POST](docs/screenshots/post-timing.png)
+
+_**Tempo** — o mesmo POST, no Compose local: 525 ms no total, 359 ms esperando a API._
 
 ---
 
@@ -291,14 +319,16 @@ _**Detalhe** — tema escuro; só os status legais da máquina de estados._
 ### Operação
 
 - KPIs da fila (total, recebidas, em análise, agendadas, críticas)
-- Listagem paginada com protocolo, solicitante, categoria, prioridade, status, data
+- **Painel** com entradas dos últimos 14 dias e barras de status, prioridade e categoria
+- Listagem paginada com protocolo, solicitante, categoria, prioridade, status, data e ação “Detalhes / Status”
 - Filtros + período de criação (`created_at`)
-- Criação com protocolo gerado no `creating` do model (`Str::random`, com retry se colidir)
+- Criação com protocolo gerado no `creating` do model (`Str::random`, com retry se colidir); urgente pede justificativa
 - Detalhe, avanço de status e **histórico de transições** no modal
 
 ### Interface
 
 - Tema claro/escuro persistente (trocar tema **não** fecha filtro/calendário)
+- Menu só com o que existe: Fila de Solicitações e Painel (`#fila` e `#painel`)
 - Logo V-Lab oficial; favicon só com a cruz
 - Estados de loading, vazio e erro de API (erro bloqueante só se não houver cache; console DEV correlaciona com `X-Request-Id`)
 
@@ -371,7 +401,7 @@ No GitHub: PR `feat/minha-mudanca` → `main` (ou → `develop`, se a entrega fo
 │   ├── e2e/                  # smoke: criar → listar → transicionar
 │   └── src/
 │       ├── api/              # Axios, React Query, cache da lista
-│       ├── components/       # Fila, filtros, modais, layout
+│       ├── components/       # Fila, Painel, filtros, modais, layout
 │       ├── hooks/            # Query e mutations (sem polling)
 │       └── utils/            # Datas BR, HTTP status
 ├── backend/
@@ -392,7 +422,7 @@ No GitHub: PR `feat/minha-mudanca` → `main` (ou → `develop`, se a entrega fo
 │   ├── logo-vlab.png
 │   ├── favicon.png
 │   ├── design-system.png
-│   └── screenshots/
+│   └── screenshots/      # fila, painel, modais e o POST capturado
 └── docker-compose.yml
 ```
 
@@ -426,7 +456,7 @@ cd frontend && npm run test:run
 cd frontend && npx playwright test
 ```
 
-Backend: transições válidas/inválidas, histórico de status, colisão de protocolo, listagem com período, cache da fila sem query repetida, `X-Request-Id`, `http.response`, redaction de PII e `/up` (200 com banco no ar, 500 quando o `SELECT 1` falha). O POST devolve `201` com o histórico já gravado e o log de domínio ainda na tabela `jobs` (sem nome nem descrição no payload); o worker é que emite `solicitacao.created`.  
+Backend: transições válidas/inválidas, histórico de status, colisão de protocolo, listagem com período, `summary` do Painel (`por_status`, `por_categoria`, `por_prioridade`, `por_dia`), cache da fila sem query repetida, `X-Request-Id`, `http.response`, redaction de PII e `/up` (200 com banco no ar, 500 quando o `SELECT 1` falha). O POST devolve `201` com o histórico já gravado e o log de domínio ainda na tabela `jobs` (sem nome nem descrição no payload); o worker é que emite `solicitacao.created`.  
 Frontend: data BR, validação do formulário, tabela/paginação, insert no cache, persistência **sem** PII da lista, GET sem `Content-Type`, mensagem por status HTTP.  
 E2E (Playwright): criar → listar → `RECEBIDA → EM_ANALISE` → conferir o histórico. O pipeline que executa isso no GitHub Actions está em [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 

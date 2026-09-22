@@ -5,10 +5,11 @@ import { LogoVlab } from './LogoVlab';
 
 interface HeaderProps {
   isMenuOpen: boolean;
+  title: string;
   onMenuClick: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ isMenuOpen, onMenuClick }) => {
+export const Header: React.FC<HeaderProps> = ({ isMenuOpen, title, onMenuClick }) => {
   return (
     <header className="header" role="banner">
       <button 
@@ -26,7 +27,7 @@ export const Header: React.FC<HeaderProps> = ({ isMenuOpen, onMenuClick }) => {
       <LogoVlab className="header__logo" />
 
       <div className="header__title-group">
-        <span className="header__title">Solicitações</span>
+        <span className="header__title">{title}</span>
       </div>
 
       <div className="header__actions">

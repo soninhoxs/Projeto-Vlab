@@ -8,6 +8,7 @@ use App\Enums\StatusEnum;
 use App\Models\Solicitacao;
 use App\Support\Cache\SolicitacaoSummaryCache;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 
 class SolicitacaoQueryService
@@ -48,7 +49,17 @@ class SolicitacaoQueryService
 
     /**
      * @param  array<string, mixed>  $filters
-     * @return array{total: int, recebidas: int, em_analise: int, agendadas: int, urgentes: int}
+     * @return array{
+     *     total: int,
+     *     recebidas: int,
+     *     em_analise: int,
+     *     agendadas: int,
+     *     urgentes: int,
+     *     por_status: array<string, int>,
+     *     por_categoria: array<string, int>,
+     *     por_prioridade: array<string, int>,
+     *     por_dia: list<array{data: string, total: int}>
+     * }
      */
     public function buildSummary(Builder $query, array $filters = []): array
     {
@@ -61,39 +72,96 @@ class SolicitacaoQueryService
     }
 
     /**
-     * @return array{total: int, recebidas: int, em_analise: int, agendadas: int, urgentes: int}
+     * @return array{
+     *     total: int,
+     *     recebidas: int,
+     *     em_analise: int,
+     *     agendadas: int,
+     *     urgentes: int,
+     *     por_status: array<string, int>,
+     *     por_categoria: array<string, int>,
+     *     por_prioridade: array<string, int>,
+     *     por_dia: list<array{data: string, total: int}>
+     * }
      */
     private function computeSummary(Builder $query): array
     {
-        $base = (clone $query)->reorder();
+        $rows = (clone $query)->reorder()->toBase()->get(['status', 'prioridade', 'categoria', 'created_at']);
 
-        if ($query->getConnection()->getDriverName() === 'pgsql') {
-            $summary = $base
-                ->selectRaw('count(*) as total')
-                ->selectRaw("count(*) filter (where status = 'RECEBIDA') as recebidas")
-                ->selectRaw("count(*) filter (where status = 'EM_ANALISE') as em_analise")
-                ->selectRaw("count(*) filter (where status = 'AGENDADA') as agendadas")
-                ->selectRaw("count(*) filter (where prioridade = 'URGENTE') as urgentes")
-                ->first();
+        $porStatus = $this->emptyCounts(StatusEnum::cases());
+        $porCategoria = $this->emptyCounts(CategoriaEnum::cases());
+        $porPrioridade = $this->emptyCounts(PrioridadeEnum::cases());
+        $porDia = [];
 
-            return [
-                'total' => (int) ($summary->total ?? 0),
-                'recebidas' => (int) ($summary->recebidas ?? 0),
-                'em_analise' => (int) ($summary->em_analise ?? 0),
-                'agendadas' => (int) ($summary->agendadas ?? 0),
-                'urgentes' => (int) ($summary->urgentes ?? 0),
-            ];
+        foreach ($rows as $row) {
+            $status = (string) $row->status;
+            $categoria = (string) $row->categoria;
+            $prioridade = (string) $row->prioridade;
+
+            if (array_key_exists($status, $porStatus)) {
+                $porStatus[$status]++;
+            }
+
+            if (array_key_exists($categoria, $porCategoria)) {
+                $porCategoria[$categoria]++;
+            }
+
+            if (array_key_exists($prioridade, $porPrioridade)) {
+                $porPrioridade[$prioridade]++;
+            }
+
+            if (! empty($row->created_at)) {
+                $day = Carbon::parse($row->created_at)->timezone((string) config('app.timezone'))->toDateString();
+                $porDia[$day] = ($porDia[$day] ?? 0) + 1;
+            }
         }
-
-        $rows = $base->get(['status', 'prioridade']);
 
         return [
             'total' => $rows->count(),
-            'recebidas' => $rows->where('status', StatusEnum::RECEBIDA)->count(),
-            'em_analise' => $rows->where('status', StatusEnum::EM_ANALISE)->count(),
-            'agendadas' => $rows->where('status', StatusEnum::AGENDADA)->count(),
-            'urgentes' => $rows->where('prioridade', PrioridadeEnum::URGENTE)->count(),
+            'recebidas' => $porStatus[StatusEnum::RECEBIDA->value],
+            'em_analise' => $porStatus[StatusEnum::EM_ANALISE->value],
+            'agendadas' => $porStatus[StatusEnum::AGENDADA->value],
+            'urgentes' => $porPrioridade[PrioridadeEnum::URGENTE->value],
+            'por_status' => $porStatus,
+            'por_categoria' => $porCategoria,
+            'por_prioridade' => $porPrioridade,
+            'por_dia' => $this->lastDays($porDia, 14),
         ];
+    }
+
+    /**
+     * @param  array<int, \BackedEnum>  $cases
+     * @return array<string, int>
+     */
+    private function emptyCounts(array $cases): array
+    {
+        $counts = [];
+
+        foreach ($cases as $case) {
+            $counts[(string) $case->value] = 0;
+        }
+
+        return $counts;
+    }
+
+    /**
+     * @param  array<string, int>  $counts
+     * @return list<array{data: string, total: int}>
+     */
+    private function lastDays(array $counts, int $days): array
+    {
+        $series = [];
+        $cursor = now()->startOfDay();
+
+        for ($offset = $days - 1; $offset >= 0; $offset--) {
+            $date = $cursor->copy()->subDays($offset)->toDateString();
+            $series[] = [
+                'data' => $date,
+                'total' => (int) ($counts[$date] ?? 0),
+            ];
+        }
+
+        return $series;
     }
 
     private function applySearch(Builder $query, string $busca): void

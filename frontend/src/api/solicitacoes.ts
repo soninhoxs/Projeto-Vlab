@@ -13,12 +13,21 @@ export function abortActiveListFetch(): void {
   activeListControllers.clear();
 }
 
+export interface DiaTotal {
+  data: string;
+  total: number;
+}
+
 export interface SolicitacoesSummary {
   total: number;
   recebidas: number;
   em_analise: number;
   agendadas: number;
   urgentes: number;
+  por_status?: Record<string, number>;
+  por_categoria?: Record<string, number>;
+  por_prioridade?: Record<string, number>;
+  por_dia?: DiaTotal[];
 }
 
 export interface SolicitacoesApiResponse {
@@ -134,14 +143,90 @@ function filtrosCacheKey(filtros: AppliedFiltros): string {
   });
 }
 
+const STATUS_KEYS = ['RECEBIDA', 'EM_ANALISE', 'AGENDADA', 'CONCLUIDA', 'CANCELADA'] as const;
+const CATEGORIA_KEYS = ['CONSULTA', 'EXAME', 'VACINACAO', 'OUTRO'] as const;
+const PRIORIDADE_KEYS = ['URGENTE', 'ALTA', 'MEDIA', 'BAIXA'] as const;
+
+const STATUS_ALIASES: Record<string, string> = {
+  'EM ANÁLISE': 'EM_ANALISE',
+  'CONCLUÍDA': 'CONCLUIDA',
+};
+
+const PRIORIDADE_ALIASES: Record<string, string> = {
+  MÉDIA: 'MEDIA',
+};
+
+function countField(
+  items: Record<string, unknown>[],
+  field: string,
+  keys: readonly string[],
+  aliases: Record<string, string> = {},
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const key of keys) counts[key] = 0;
+
+  for (const item of items) {
+    const raw = String(item[field] ?? '');
+    const key = aliases[raw] ?? raw;
+    if (key in counts) counts[key] += 1;
+  }
+
+  return counts;
+}
+
+export function recentDaySeries(counts: Map<string, number>, days = 14, today = new Date()): DiaTotal[] {
+  const series: DiaTotal[] = [];
+
+  for (let offset = days - 1; offset >= 0; offset -= 1) {
+    const date = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - offset));
+    const iso = date.toISOString().slice(0, 10);
+    series.push({ data: iso, total: counts.get(iso) ?? 0 });
+  }
+
+  return series;
+}
+
+function dayCountsFromItems(items: Record<string, unknown>[]): DiaTotal[] {
+  const counts = new Map<string, number>();
+
+  for (const item of items) {
+    const created = typeof item.created_at === 'string' ? item.created_at.slice(0, 10) : '';
+    if (!created) continue;
+    counts.set(created, (counts.get(created) ?? 0) + 1);
+  }
+
+  return recentDaySeries(counts);
+}
+
 function buildSummaryFromItems(items: Record<string, unknown>[]): SolicitacoesSummary {
+  const porStatus = countField(items, 'status', STATUS_KEYS, STATUS_ALIASES);
+  const porCategoria = countField(items, 'categoria', CATEGORIA_KEYS);
+  const porPrioridade = countField(items, 'prioridade', PRIORIDADE_KEYS, PRIORIDADE_ALIASES);
+
   return {
     total: items.length,
-    recebidas: items.filter((item) => item.status === 'RECEBIDA').length,
-    em_analise: items.filter((item) => item.status === 'EM_ANALISE' || item.status === 'EM ANÁLISE').length,
-    agendadas: items.filter((item) => item.status === 'AGENDADA').length,
-    urgentes: items.filter((item) => item.prioridade === 'URGENTE').length,
+    recebidas: porStatus.RECEBIDA,
+    em_analise: porStatus.EM_ANALISE,
+    agendadas: porStatus.AGENDADA,
+    urgentes: porPrioridade.URGENTE,
+    por_status: porStatus,
+    por_categoria: porCategoria,
+    por_prioridade: porPrioridade,
+    por_dia: dayCountsFromItems(items),
   };
+}
+
+function bumpCount(map: Record<string, number> | undefined, key: string): Record<string, number> | undefined {
+  if (!map || !(key in map)) return map;
+  return { ...map, [key]: map[key] + 1 };
+}
+
+function bumpDay(days: DiaTotal[] | undefined, createdAt: unknown): DiaTotal[] | undefined {
+  if (!days || typeof createdAt !== 'string') return days;
+  const iso = createdAt.slice(0, 10);
+  if (!days.some((day) => day.data === iso)) return days;
+
+  return days.map((day) => (day.data === iso ? { ...day, total: day.total + 1 } : day));
 }
 
 function collectCompleteCachedRows(
@@ -280,6 +365,10 @@ export function insertCreatedIntoList(
           total: current.summary.total + 1,
           recebidas: status === 'RECEBIDA' ? current.summary.recebidas + 1 : current.summary.recebidas,
           urgentes: prioridade === 'URGENTE' ? current.summary.urgentes + 1 : current.summary.urgentes,
+          por_status: bumpCount(current.summary.por_status, status),
+          por_categoria: bumpCount(current.summary.por_categoria, String(created.categoria ?? '')),
+          por_prioridade: bumpCount(current.summary.por_prioridade, prioridade),
+          por_dia: bumpDay(current.summary.por_dia, created.created_at),
         }
       : current.summary,
   };

@@ -7,6 +7,7 @@ import {
   getSolicitacoesQueryKey,
   insertCreatedIntoList,
   matchesListFilters,
+  recentDaySeries,
   type SolicitacoesApiResponse,
 } from './solicitacoes';
 import { DEFAULT_FILTROS } from '../types';
@@ -35,6 +36,18 @@ const list: SolicitacoesApiResponse = {
     urgentes: 0,
   },
 };
+
+describe('recentDaySeries', () => {
+  it('fills the last 14 days and keeps a count on the matching day', () => {
+    const today = new Date('2026-09-22T15:00:00Z');
+    const series = recentDaySeries(new Map([['2026-09-22', 3], ['2026-09-01', 9]]), 14, today);
+
+    expect(series).toHaveLength(14);
+    expect(series[0].data).toBe('2026-09-09');
+    expect(series.at(-1)).toEqual({ data: '2026-09-22', total: 3 });
+    expect(series.find((day) => day.data === '2026-09-01')).toBeUndefined();
+  });
+});
 
 describe('getNeighborPages', () => {
   it('prefetches the next page from the first page', () => {

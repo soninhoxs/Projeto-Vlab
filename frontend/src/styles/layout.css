@@ -280,40 +280,6 @@
   flex-shrink: 0;
 }
 
-.sidebar__footer {
-  padding: var(--space-4) var(--space-5);
-  border-top: 1px solid var(--color-neutral-200);
-  flex-shrink: 0;
-}
-
-.sidebar__server-status {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-size: var(--font-size-sm);
-  color: var(--color-neutral-500);
-}
-
-.sidebar__server-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: var(--radius-full);
-  background-color: var(--color-primary-400);
-  flex-shrink: 0;
-}
-
-.sidebar__server-label {
-  font-weight: var(--font-weight-medium);
-  color: var(--color-primary-600);
-}
-
-.sidebar__server-version {
-  margin-left: var(--space-2);
-  font-size: var(--font-size-xs);
-  color: var(--color-neutral-400);
-  font-family: 'Courier New', monospace;
-}
-
 /* ─── Mobile Menu Toggle ─── */
 .sidebar__toggle {
   display: none;

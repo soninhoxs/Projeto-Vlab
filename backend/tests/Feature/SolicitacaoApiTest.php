@@ -50,6 +50,38 @@ class SolicitacaoApiTest extends TestCase
             ]);
     }
 
+    public function test_summary_includes_breakdowns_for_the_dashboard(): void
+    {
+        Solicitacao::factory()->create([
+            'status' => StatusEnum::RECEBIDA,
+            'categoria' => CategoriaEnum::CONSULTA,
+            'prioridade' => PrioridadeEnum::URGENTE,
+            'created_at' => now(),
+        ]);
+        Solicitacao::factory()->create([
+            'status' => StatusEnum::CONCLUIDA,
+            'categoria' => CategoriaEnum::EXAME,
+            'prioridade' => PrioridadeEnum::BAIXA,
+            'created_at' => now()->subDays(20),
+        ]);
+
+        $response = $this->getJson('/api/v1/solicitacoes');
+
+        $response->assertOk();
+        $response->assertJsonPath('summary.total', 2);
+        $response->assertJsonPath('summary.por_status.RECEBIDA', 1);
+        $response->assertJsonPath('summary.por_status.CONCLUIDA', 1);
+        $response->assertJsonPath('summary.por_status.CANCELADA', 0);
+        $response->assertJsonPath('summary.por_categoria.CONSULTA', 1);
+        $response->assertJsonPath('summary.por_categoria.EXAME', 1);
+        $response->assertJsonPath('summary.por_prioridade.URGENTE', 1);
+        $response->assertJsonPath('summary.por_prioridade.BAIXA', 1);
+        $response->assertJsonCount(14, 'summary.por_dia');
+
+        $today = collect($response->json('summary.por_dia'))->firstWhere('data', now()->toDateString());
+        $this->assertSame(1, $today['total']);
+    }
+
     public function test_can_filter_by_status()
     {
         Solicitacao::factory()->create(['status' => StatusEnum::RECEBIDA]);

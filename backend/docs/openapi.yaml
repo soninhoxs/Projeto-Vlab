@@ -404,6 +404,47 @@ components:
         urgentes:
           type: integer
           example: 2
+        por_status:
+          type: object
+          additionalProperties:
+            type: integer
+          example:
+            RECEBIDA: 10
+            EM_ANALISE: 8
+            AGENDADA: 5
+            CONCLUIDA: 4
+            CANCELADA: 3
+        por_categoria:
+          type: object
+          additionalProperties:
+            type: integer
+          example:
+            CONSULTA: 12
+            EXAME: 9
+            VACINACAO: 6
+            OUTRO: 3
+        por_prioridade:
+          type: object
+          additionalProperties:
+            type: integer
+          example:
+            URGENTE: 2
+            ALTA: 8
+            MEDIA: 14
+            BAIXA: 6
+        por_dia:
+          type: array
+          description: Entradas nos últimos 14 dias, inclusive dias sem solicitação
+          items:
+            type: object
+            properties:
+              data:
+                type: string
+                format: date
+                example: '2026-09-22'
+              total:
+                type: integer
+                example: 3
 
     StatusHistoricoItem:
       type: object

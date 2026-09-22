@@ -11,6 +11,7 @@ import './styles/components.css';
 import './styles/table.css';
 import './styles/filters.css';
 import './styles/theme-toggle.css';
+import './styles/dashboard.css';
 
 const rootElement = document.getElementById('root');
 

@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import { Sidebar } from './components/Sidebar';
+import { useEffect, useState } from 'react';
+import { Sidebar, type AppView } from './components/Sidebar';
 import { Header } from './components/Header';
+import { Dashboard } from './components/Dashboard';
 import { KpiCards } from './components/KpiCards';
 import { FilterBar } from './components/FilterBar';
 import { ListRefreshBanner } from './components/ListRefreshBanner';
@@ -12,8 +13,13 @@ import { abortActiveListFetch } from './api/solicitacoes';
 import { useSolicitacoes } from './hooks/useSolicitacoes';
 import type { Solicitacao } from './types';
 
+function viewFromHash(): AppView {
+  return window.location.hash === '#painel' ? 'painel' : 'fila';
+}
+
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [view, setView] = useState<AppView>(viewFromHash);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedSolicitacao, setSelectedSolicitacao] = useState<Solicitacao | null>(null);
   
@@ -33,20 +39,31 @@ function App() {
     resetListToDefault,
   } = useSolicitacoes();
 
+  useEffect(() => {
+    const syncView = () => setView(viewFromHash());
+    window.addEventListener('hashchange', syncView);
+    return () => window.removeEventListener('hashchange', syncView);
+  }, []);
+
   return (
     <div className="app">
       <a href="#main-content" className="skip-link">Ir para o conteúdo principal</a>
-      <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
+      <Sidebar isOpen={sidebarOpen} view={view} setIsOpen={setSidebarOpen} />
       <Header
         isMenuOpen={sidebarOpen}
+        title={view === 'painel' ? 'Painel' : 'Solicitações'}
         onMenuClick={() => setSidebarOpen((open) => !open)}
       />
 
       <main id="main-content" className="main" role="main">
           <header className="main__header">
-            <h1 className="main__title">Solicitações</h1>
+            <h1 className="main__title">{view === 'painel' ? 'Painel' : 'Solicitações'}</h1>
           </header>
 
+          {view === 'painel' ? (
+            <Dashboard />
+          ) : (
+          <>
           <KpiCards 
             total={kpis.total}
             recebidas={kpis.recebidas}
@@ -91,6 +108,8 @@ function App() {
             onPageChange={setCurrentPage}
             isFetching={isListRefreshing}
           />
+          </>
+          )}
       </main>
 
       {/* Modals */}
