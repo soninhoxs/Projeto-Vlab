@@ -8,6 +8,8 @@
 
 React · TypeScript · Laravel · PostgreSQL · Docker
 
+[![CI](https://github.com/soninhoxs/Projeto-Vlab/actions/workflows/ci.yml/badge.svg)](https://github.com/soninhoxs/Projeto-Vlab/actions/workflows/ci.yml)
+
 Repositório: [soninhoxs/Projeto-Vlab](https://github.com/soninhoxs/Projeto-Vlab)
 
 ![Fila de solicitações](docs/screenshots/fila-solicitacoes.png)
@@ -195,7 +197,7 @@ Para gravar o canal `api` em arquivo, suba com `LOG_HTTP_CHANNEL=api` e `LOG_CHA
 | **Dados** | PostgreSQL 15, migrations, factory/seeder, índices na fila |
 | **Fila** | Paginação, busca, categoria, prioridade, status, período |
 | **Logs** | Canal `api` JSON diário, `X-Request-Id`, eventos de domínio, PII redigida |
-| **Qualidade** | PHPUnit em SQLite isolado, Vitest, Playwright (criar → listar → transicionar), CI GitHub Actions |
+| **Qualidade** | GitHub Actions: Pint + oxlint, PHPUnit, Vitest, build Vite, Playwright |
 | **DevOps** | Docker Compose, volume `vendor`, healthcheck, OPcache, 8 workers |
 
 ---
@@ -344,7 +346,7 @@ No GitHub: PR `feat/minha-mudanca` → `main` (ou → `develop`, se a entrega fo
 ## Estrutura do repositório
 
 ```
-├── .github/workflows/ci.yml  # PHPUnit + Vitest + build Vite + Playwright
+├── .github/workflows/ci.yml  # GitHub Actions: lint, testes e build
 ├── frontend/                 # SPA Vite
 │   ├── e2e/                  # smoke: criar → listar → transicionar
 │   └── src/
@@ -374,6 +376,26 @@ No GitHub: PR `feat/minha-mudanca` → `main` (ou → `develop`, se a entrega fo
 
 ---
 
+## Pipeline de CI
+
+O **GitHub Actions** está em [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Dispara em push na `main` e em todo pull request. Cada job nomeia os passos de lint, testes e build; o smoke E2E só começa depois que backend e frontend passam.
+
+| Job | Lint | Testes | Build |
+|-----|------|--------|-------|
+| `backend` | Laravel Pint (`vendor/bin/pint --test`) | PHPUnit em SQLite (`php artisan test`) | — |
+| `frontend` | oxlint (`npm run lint`) | Vitest (`npm run test:run`) | TypeScript + Vite (`npm run build`) |
+| `e2e` | — | Playwright: criar → listar → transicionar | — |
+
+PHP 8.4 e Node 22. Os mesmos comandos, fora do Actions:
+
+```bash
+cd backend && vendor/bin/pint --test && php artisan test
+cd frontend && npm run lint && npm run test:run && npm run build
+cd frontend && npx playwright test
+```
+
+---
+
 ## Testes
 
 ```bash
@@ -384,7 +406,7 @@ cd frontend && npx playwright test
 
 Backend: transições válidas/inválidas, histórico de status, colisão de protocolo, listagem com período, cache da fila sem query repetida, `X-Request-Id`, `http.response` e redaction de PII.  
 Frontend: data BR, validação do formulário, tabela/paginação, insert no cache, persistência **sem** PII da lista, GET sem `Content-Type`, mensagem por status HTTP.  
-E2E (Playwright): criar → listar → `RECEBIDA → EM_ANALISE` → conferir o histórico. CI em [`.github/workflows/ci.yml`](.github/workflows/ci.yml) (PHPUnit SQLite + Vitest + `vite build` + smoke Playwright).
+E2E (Playwright): criar → listar → `RECEBIDA → EM_ANALISE` → conferir o histórico. O pipeline que executa isso no GitHub Actions está em [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ---
 
