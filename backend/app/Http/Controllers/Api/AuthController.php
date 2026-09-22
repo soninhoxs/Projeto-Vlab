@@ -9,6 +9,7 @@ use App\Http\Requests\LoginRequest;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Hash;
+
 final class AuthController extends Controller
 {
     public function login(LoginRequest $request): JsonResponse

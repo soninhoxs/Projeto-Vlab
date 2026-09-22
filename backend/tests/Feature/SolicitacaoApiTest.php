@@ -6,8 +6,10 @@ use App\Enums\CategoriaEnum;
 use App\Enums\PrioridadeEnum;
 use App\Enums\StatusEnum;
 use App\Models\Solicitacao;
+use App\Models\SolicitacaoStatusHistorico;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class SolicitacaoApiTest extends TestCase
@@ -220,7 +222,7 @@ class SolicitacaoApiTest extends TestCase
         Solicitacao::factory()->create(['protocolo' => 'AAAAAAAAAA']);
 
         $calls = 0;
-        \Illuminate\Support\Str::createRandomStringsUsing(function () use (&$calls) {
+        Str::createRandomStringsUsing(function () use (&$calls) {
             $calls++;
 
             return $calls === 1 ? 'aaaaaaaaaa' : 'bbbbbbbbbb';
@@ -233,7 +235,7 @@ class SolicitacaoApiTest extends TestCase
                 'prioridade' => PrioridadeEnum::BAIXA,
             ]);
         } finally {
-            \Illuminate\Support\Str::createRandomStringsNormally();
+            Str::createRandomStringsNormally();
         }
 
         $this->assertSame('BBBBBBBBBB', $created->protocolo);
@@ -256,7 +258,7 @@ class SolicitacaoApiTest extends TestCase
             'from_status' => null,
             'to_status' => 'RECEBIDA',
         ]);
-        $this->assertSame(1, \App\Models\SolicitacaoStatusHistorico::query()->where('solicitacao_id', $id)->count());
+        $this->assertSame(1, SolicitacaoStatusHistorico::query()->where('solicitacao_id', $id)->count());
     }
 
     public function test_valid_transition_appends_history(): void
@@ -272,13 +274,13 @@ class SolicitacaoApiTest extends TestCase
             'from_status' => 'RECEBIDA',
             'to_status' => 'EM_ANALISE',
         ]);
-        $this->assertSame(2, \App\Models\SolicitacaoStatusHistorico::query()->where('solicitacao_id', $solicitacao->id)->count());
+        $this->assertSame(2, SolicitacaoStatusHistorico::query()->where('solicitacao_id', $solicitacao->id)->count());
     }
 
     public function test_invalid_transition_does_not_write_history(): void
     {
         $solicitacao = Solicitacao::factory()->create(['status' => StatusEnum::RECEBIDA]);
-        $before = \App\Models\SolicitacaoStatusHistorico::query()->where('solicitacao_id', $solicitacao->id)->count();
+        $before = SolicitacaoStatusHistorico::query()->where('solicitacao_id', $solicitacao->id)->count();
 
         $this->patchJson("/api/v1/solicitacoes/{$solicitacao->id}/status", [
             'status' => 'AGENDADA',
@@ -286,7 +288,7 @@ class SolicitacaoApiTest extends TestCase
 
         $this->assertSame(
             $before,
-            \App\Models\SolicitacaoStatusHistorico::query()->where('solicitacao_id', $solicitacao->id)->count(),
+            SolicitacaoStatusHistorico::query()->where('solicitacao_id', $solicitacao->id)->count(),
         );
         $this->assertDatabaseHas('solicitacoes', [
             'id' => $solicitacao->id,

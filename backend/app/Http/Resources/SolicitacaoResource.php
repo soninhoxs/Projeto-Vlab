@@ -4,6 +4,7 @@ namespace App\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Carbon;
 
 class SolicitacaoResource extends JsonResource
 {
@@ -59,7 +60,7 @@ class SolicitacaoResource extends JsonResource
     private static function isoTimestamp(mixed $value): ?string
     {
         if ($value instanceof \DateTimeInterface) {
-            return \Illuminate\Support\Carbon::parse($value)->utc()->format('Y-m-d\TH:i:s\Z');
+            return Carbon::parse($value)->utc()->format('Y-m-d\TH:i:s\Z');
         }
 
         if (is_array($value)) {
@@ -79,7 +80,7 @@ class SolicitacaoResource extends JsonResource
         }
 
         try {
-            return \Illuminate\Support\Carbon::parse($value)->utc()->format('Y-m-d\TH:i:s\Z');
+            return Carbon::parse($value)->utc()->format('Y-m-d\TH:i:s\Z');
         } catch (\Throwable) {
             return $value;
         }
