@@ -34,6 +34,7 @@ class AppServiceProvider extends ServiceProvider
             'LOG_API_LEVEL',
             'LOG_API_DAYS',
             'LOG_HTTP_SKIP_FAST_INDEX',
+            'QUEUE_CONNECTION',
         ]));
 
         Gate::policy(Solicitacao::class, SolicitacaoPolicy::class);

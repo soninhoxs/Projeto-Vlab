@@ -21,6 +21,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    image: vlab-backend
     container_name: vlab_backend
     restart: unless-stopped
     working_dir: /var/www/html
@@ -42,7 +43,7 @@ services:
       - VLAB_LIST_CACHE_SECONDS=30
       - CACHE_STORE=array
       - SESSION_DRIVER=array
-      - QUEUE_CONNECTION=sync
+      - QUEUE_CONNECTION=database
       - PHP_CLI_SERVER_WORKERS=8
       - LOG_CHANNEL=stderr
       - LOG_STACK=stderr
@@ -62,6 +63,38 @@ services:
       timeout: 5s
       retries: 8
       start_period: 90s
+
+  queue:
+    image: vlab-backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vlab_queue
+    restart: unless-stopped
+    working_dir: /var/www/html
+    volumes:
+      - ./backend:/var/www/html
+      - vlab_vendor:/var/www/html/vendor
+    environment:
+      - APP_ENV=local
+      - APP_DEBUG=false
+      - DB_CONNECTION=pgsql
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_DATABASE=vlab_db
+      - DB_USERNAME=vlab_user
+      - DB_PASSWORD=vlab_password
+      - QUEUE_CONNECTION=database
+      - LOG_CHANNEL=stderr
+      - LOG_STACK=stderr
+      - LOG_LEVEL=warning
+      - LOG_HTTP_ENABLED=true
+      - LOG_HTTP_CHANNEL=api_stderr
+      - LOG_API_LEVEL=info
+    entrypoint: ["php", "artisan", "queue:work", "database", "--queue=dominio", "--sleep=1", "--tries=3", "--max-time=3600", "--no-interaction"]
+    depends_on:
+      backend:
+        condition: service_healthy
 
   frontend:
     image: node:20-alpine

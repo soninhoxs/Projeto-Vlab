@@ -5,17 +5,20 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Enums\StatusEnum;
+use App\Events\SolicitacaoCriada;
+use App\Events\SolicitacaoStatusAlterado;
 use App\Http\Controllers\Controller;
+use App\Http\Middleware\AssignRequestId;
 use App\Http\Requests\IndexSolicitacaoRequest;
 use App\Http\Requests\StoreSolicitacaoRequest;
 use App\Http\Requests\UpdateStatusRequest;
 use App\Http\Resources\SolicitacaoResource;
 use App\Models\Solicitacao;
-use App\Services\ApiLogService;
 use App\Services\SolicitacaoQueryService;
-use App\Support\Cache\SolicitacaoSummaryCache;
 use App\Services\StatusTransitionService;
+use App\Support\Cache\SolicitacaoSummaryCache;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
@@ -24,7 +27,6 @@ class SolicitacaoController extends Controller
     public function __construct(
         protected StatusTransitionService $statusTransitionService,
         protected SolicitacaoQueryService $solicitacaoQueryService,
-        protected ApiLogService $apiLogService,
     ) {}
 
     public function index(IndexSolicitacaoRequest $request): JsonResponse
@@ -90,13 +92,14 @@ class SolicitacaoController extends Controller
             'justificativa_prioridade',
         ])));
 
-        $this->apiLogService->logDomainEvent($request, 'solicitacao.created', [
-            'solicitacao_id' => $solicitacao->id,
-            'protocolo' => $solicitacao->protocolo,
-            'categoria' => $solicitacao->categoria->value,
-            'prioridade' => $solicitacao->prioridade->value,
-            'status' => $solicitacao->status->value,
-        ]);
+        SolicitacaoCriada::dispatch(
+            solicitacaoId: $solicitacao->id,
+            protocolo: $solicitacao->protocolo,
+            categoria: $solicitacao->categoria->value,
+            prioridade: $solicitacao->prioridade->value,
+            status: $solicitacao->status->value,
+            requestId: $this->requestId($request),
+        );
 
         return response()->json([
             'message' => 'Solicitação criada com sucesso',
@@ -121,16 +124,26 @@ class SolicitacaoController extends Controller
         $newStatus = StatusEnum::from($request->validated('status'));
         $this->statusTransitionService->transition($solicitacao, $newStatus);
 
-        $this->apiLogService->logDomainEvent($request, 'solicitacao.status_updated', [
-            'solicitacao_id' => $solicitacao->id,
-            'protocolo' => $solicitacao->protocolo,
-            'from_status' => $previousStatus,
-            'to_status' => $newStatus->value,
-        ]);
+        if ($previousStatus !== $solicitacao->status->value) {
+            SolicitacaoStatusAlterado::dispatch(
+                solicitacaoId: $solicitacao->id,
+                protocolo: $solicitacao->protocolo,
+                fromStatus: $previousStatus,
+                toStatus: $solicitacao->status->value,
+                requestId: $this->requestId($request),
+            );
+        }
 
         return response()->json([
             'message' => 'Status atualizado com sucesso',
             'data' => SolicitacaoResource::make($solicitacao)->resolve($request),
         ]);
+    }
+
+    private function requestId(Request $request): ?string
+    {
+        $id = $request->attributes->get(AssignRequestId::ATTRIBUTE);
+
+        return is_string($id) ? $id : null;
     }
 }

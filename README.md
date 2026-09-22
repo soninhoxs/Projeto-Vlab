@@ -22,7 +22,7 @@ _Fila operacional — KPIs, filtros e listagem paginada._
 
 O **V-Lab** registra e acompanha solicitações encaminhadas a uma unidade: protocolo único, categoria, prioridade, status e trilha de datas. O recorte é o de uma **fila de regulação** — o operador vê o que chegou, filtra, abre o detalhe e avança o status segundo regras de negócio, não atalhos na interface.
 
-Foi desenhado para o processo seletivo **V-Lab Cln UFPE**: stack simples, contrato REST explícito e decisões que aguentam volume sem copiar arquitetura de ERP (mensageria, microserviços).
+Foi desenhado para o processo seletivo **V-Lab Cln UFPE**: stack simples, contrato REST explícito e decisões que aguentam volume sem microserviços nem Redis.
 
 ### Problema
 
@@ -55,22 +55,29 @@ flowchart TB
         Ctrl --> FR
         Ctrl --> SM
         Ctrl --> QS
+        Ctrl -->|depois do commit| Ev[Evento de domínio]
     end
 
     subgraph Dados
         PG[(PostgreSQL 15)]
+        Jobs[(jobs · fila dominio)]
         Cache[(Cache de leitura)]
     end
+
+    Worker[vlab_queue · queue:work]
 
     RQ -->|GET / POST / PATCH| Ctrl
     QS --> PG
     SM --> PG
     Ctrl --> Cache
+    Ev --> Jobs
+    Jobs --> Worker
+    Worker --> Log[ApiLogService]
 ```
 
 Fluxo: o browser fala só com `/api/v1`. Listagem e filtros passam pelo `SolicitacaoQueryService`. Criação valida no `StoreSolicitacaoRequest` e gera protocolo no model. Mudança de status passa pelo `StatusTransitionService` — estados finais (`CONCLUIDA`, `CANCELADA`) não voltam. Create e PATCH gravam `solicitacao_status_historico` na mesma transação.
 
-Não há fila, Redis nem barramento. Para este recorte, I/O síncrono + índices no Postgres + cache de leitura é o caminho certo.
+O que o operador espera no `201`/`200` continua síncrono: protocolo, status, histórico e o bump do cache de leitura. O log de domínio (`solicitacao.created`, `solicitacao.status_updated`) sai **depois do commit**, como evento, para a fila `dominio` na tabela `jobs` do mesmo Postgres. O container `vlab_queue` grava a linha JSON. Não há Redis nem barramento externo. GET de listagem não entra nessa fila: um INSERT em `jobs` por página custaria mais do que a linha no stderr, e o `http.response` já roda no `terminate`.
 
 ### Contrato da API
 
@@ -105,6 +112,8 @@ O PATCH só aplica o que o serviço autoriza. Isso evita status “inventado” 
 **Query object para a fila.** `SolicitacaoQueryService` monta o SELECT: LIKE com escape de `%`/`_`, enums, período. O controller não acumula `if`.
 
 **Histórico de status na mesma transação.** Cada `create` e cada `transition` grava `solicitacao_status_historico`. O `GET` de detalhe devolve a trilha; o modal não inventa datas. Colisão de protocolo no `creating` tenta de novo em vez de 500.
+
+**Log de domínio na fila, o restante no request.** `RegistrarEventoDeDominio` implementa `ShouldQueueAfterCommit` e escuta `SolicitacaoCriada` / `SolicitacaoStatusAlterado`. O job só é aceito depois do commit, na fila `dominio`, com 3 tentativas. O payload leva id, protocolo, enums e `request_id` — não leva nome, descrição nem justificativa. Se o worker estiver parado, o `201` já foi embora e a linha espera em `jobs`. Transição inválida ou status igual não enfileira. Fora do Compose (`QUEUE_CONNECTION=sync`, inclusive o PHPUnit) o listener roda no próprio processo, para o teste não depender de um worker.
 
 **Cache em duas camadas.** A listagem não consulta o Postgres a cada clique e **não despeja milhares de linhas** — 7 por página.
 
@@ -153,6 +162,10 @@ flowchart LR
     MW --> API[Controller]
     API --> Term[LogHttpResponse terminate]
     Term --> Svc[ApiLogService]
+    API -->|depois do commit| Ev[Evento de domínio]
+    Ev --> Jobs[(jobs)]
+    Jobs --> Worker[vlab_queue]
+    Worker --> Svc
     Svc --> San[LogContextSanitizer]
     San --> Out["stderr JSON no Compose · arquivo fora dele"]
 ```
@@ -164,8 +177,8 @@ No **Compose de entrega** o canal é `api_stderr`: uma linha JSON por evento em 
 | Evento | Quando | Campos |
 |--------|--------|--------|
 | `http.response` | fim de cada request `api/*` | método, path, rota, status, frase MDN, categoria, `duration_ms`, `request_id` |
-| `solicitacao.created` | POST que criou o registro | `solicitacao_id`, protocolo, categoria, prioridade, status |
-| `solicitacao.status_updated` | PATCH de transição | id, protocolo, `from_status`, `to_status` |
+| `solicitacao.created` | worker, depois do POST | `solicitacao_id`, protocolo, categoria, prioridade, status, `queued: true` |
+| `solicitacao.status_updated` | worker, depois do PATCH que mudou o status | id, protocolo, `from_status`, `to_status`, `queued: true` |
 | `integration.failed` | `QueryException` / `PDOException` em `api/*` | `request_id`, `dependency=database`, classe, `sqlstate` |
 
 Nível segue o status HTTP — 2xx `info`, 4xx `warning`, 5xx `error`. Validação `422` não vira incidente; `500` e falha de banco sim. Os dois últimos compartilham o `request_id` da mesma requisição. A mensagem da exceção de SQL **não** entra no log (pode conter dados da solicitação).
@@ -176,7 +189,10 @@ Arquivo (fora do Compose): `backend/storage/logs/api-YYYY-MM-DD.log`, JSON por l
 
 ```bash
 docker logs vlab_backend --tail 50
+docker logs vlab_queue --tail 50
 ```
+
+`http.response` sai no `vlab_backend`. `solicitacao.created` e `solicitacao.status_updated` saem no `vlab_queue`.
 
 Uma linha típica no Compose:
 
@@ -197,6 +213,7 @@ Para gravar o canal `api` em arquivo, suba com `LOG_HTTP_CHANNEL=api` e `LOG_CHA
 | **Dados** | PostgreSQL 15, migrations, factory/seeder, índices na fila |
 | **Fila** | Paginação, busca, categoria, prioridade, status, período |
 | **Logs** | Canal `api` JSON diário, `X-Request-Id`, eventos de domínio, PII redigida |
+| **Assíncrono** | Fila `dominio` na tabela `jobs` (sem Redis); worker `vlab_queue` |
 | **Qualidade** | GitHub Actions: Pint + oxlint, PHPUnit, Vitest, build Vite, Playwright |
 | **DevOps** | Docker Compose, volume `vendor`, healthcheck, OPcache, 8 workers |
 
@@ -292,7 +309,7 @@ Autenticação de operador, edição após criar (exceto status) e exclusão. O 
 
 **Frontend** — React 19 · TypeScript · Vite · TanStack Query · Axios · Lucide
 
-**Backend** — PHP 8.4 · Laravel 13 · PostgreSQL 15
+**Backend** — PHP 8.4 · Laravel 13 · PostgreSQL 15 · fila `database` (`jobs`)
 
 **Infra** — Docker Compose · OPcache · 8 workers PHP CLI · volume Linux para `vendor`
 
@@ -313,13 +330,13 @@ docker compose up -d
 | Frontend | http://localhost:5173 |
 | API | http://localhost:8000/api/v1 |
 
-O backend espera o Postgres healthy, instala o `vendor` no volume Linux (primeira subida demora o `composer install`) e roda **migrations**. Não há tela de login. Seed (dados de exemplo, opcional):
+O backend espera o Postgres healthy, instala o `vendor` no volume Linux (primeira subida demora o `composer install`) e roda **migrations**. O `vlab_queue` sobe depois da API healthy e consome a fila `dominio`. Não há tela de login. Seed (dados de exemplo, opcional):
 
 ```bash
 docker exec vlab_backend php artisan db:seed --force
 ```
 
-Variáveis no `docker-compose.yml`: `VLAB_LIST_CACHE_SECONDS=30`, `VLAB_SUMMARY_CACHE_SECONDS=15`, `PHP_CLI_SERVER_WORKERS=8`, `CACHE_STORE=array`. Modelo: [`backend/.env.example`](backend/.env.example) e [`frontend/.env.example`](frontend/.env.example). Não commitar `.env`.
+Variáveis no `docker-compose.yml`: `VLAB_LIST_CACHE_SECONDS=30`, `VLAB_SUMMARY_CACHE_SECONDS=15`, `PHP_CLI_SERVER_WORKERS=8`, `CACHE_STORE=array`, `QUEUE_CONNECTION=database`. O `artisan serve` repassa `QUEUE_CONNECTION` ao processo HTTP, senão um `.env` com `sync` engoliria a fila. Modelo: [`backend/.env.example`](backend/.env.example) e [`frontend/.env.example`](frontend/.env.example). Não commitar `.env`.
 
 PHPUnit **não** usa o Postgres do Compose: `tests/TestCase.php` força SQLite `:memory:`, para `artisan test` não apagar a fila local.
 
@@ -357,6 +374,8 @@ No GitHub: PR `feat/minha-mudanca` → `main` (ou → `develop`, se a entrega fo
 ├── backend/
 │   ├── app/
 │   │   ├── Enums/
+│   │   ├── Events/           # SolicitacaoCriada, SolicitacaoStatusAlterado
+│   │   ├── Listeners/        # RegistrarEventoDeDominio (fila dominio)
 │   │   ├── Http/             # Controller, Requests, Resources, middleware de log
 │   │   ├── Logging/          # Formatter JSON do canal api
 │   │   ├── Models/           # Solicitacao + SolicitacaoStatusHistorico
@@ -404,7 +423,7 @@ cd frontend && npm run test:run
 cd frontend && npx playwright test
 ```
 
-Backend: transições válidas/inválidas, histórico de status, colisão de protocolo, listagem com período, cache da fila sem query repetida, `X-Request-Id`, `http.response` e redaction de PII.  
+Backend: transições válidas/inválidas, histórico de status, colisão de protocolo, listagem com período, cache da fila sem query repetida, `X-Request-Id`, `http.response` e redaction de PII. O POST devolve `201` com o histórico já gravado e o log de domínio ainda na tabela `jobs` (sem nome nem descrição no payload); o worker é que emite `solicitacao.created`.  
 Frontend: data BR, validação do formulário, tabela/paginação, insert no cache, persistência **sem** PII da lista, GET sem `Content-Type`, mensagem por status HTTP.  
 E2E (Playwright): criar → listar → `RECEBIDA → EM_ANALISE` → conferir o histórico. O pipeline que executa isso no GitHub Actions está em [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 

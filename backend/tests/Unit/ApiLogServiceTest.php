@@ -39,6 +39,29 @@ class ApiLogServiceTest extends TestCase
         $this->assertFalse(app(ApiLogService::class)->isEnabled());
     }
 
+    public function test_queued_domain_event_is_marked_and_respects_the_switch(): void
+    {
+        $logged = $this->captureLoggedMessages();
+
+        app(ApiLogService::class)->logQueuedDomainEvent('req-queue01', 'solicitacao.created', [
+            'protocolo' => 'VL-1',
+            'nome_solicitante' => 'Nao pode aparecer',
+        ]);
+
+        $entry = $logged->first(fn (MessageLogged $event) => $event->message === 'solicitacao.created');
+        $this->assertNotNull($entry);
+        $this->assertTrue($entry->context['queued']);
+        $this->assertSame('req-queue01', $entry->context['request_id']);
+        $this->assertSame('[redacted]', $entry->context['nome_solicitante']);
+
+        config(['http_logging.enabled' => false]);
+        $silent = $this->captureLoggedMessages();
+        app(ApiLogService::class)->logQueuedDomainEvent('req-queue01', 'solicitacao.created', [
+            'protocolo' => 'VL-2',
+        ]);
+        $this->assertNull($silent->first(fn (MessageLogged $event) => $event->message === 'solicitacao.created' && ($event->context['protocolo'] ?? null) === 'VL-2'));
+    }
+
     public function test_should_not_write_logs_when_http_logging_is_disabled(): void
     {
         config(['http_logging.enabled' => false]);

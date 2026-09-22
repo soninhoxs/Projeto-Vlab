@@ -82,6 +82,26 @@ final class ApiLogService
     }
 
     /**
+     * Gravado pelo worker da fila `dominio`. O contexto já nasce sem PII;
+     * o sanitizer continua sendo a última barreira.
+     *
+     * @param  array<string, mixed>  $context
+     */
+    public function logQueuedDomainEvent(?string $requestId, string $event, array $context = []): void
+    {
+        if (! $this->isEnabled()) {
+            return;
+        }
+
+        $this->write('info', $event, [
+            ...$context,
+            'event' => $event,
+            'request_id' => $requestId,
+            'queued' => true,
+        ]);
+    }
+
+    /**
      * Falha de persistência (Postgres/PDO). Não grava SQL nem bindings: a mensagem
      * do QueryException pode carregar nome, descrição ou justificativa.
      */
